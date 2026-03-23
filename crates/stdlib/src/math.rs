@@ -197,6 +197,118 @@ pub fn point_in_rectangle<'gc>(
     Ok(px >= xmin && px <= xmax && py >= ymin && py <= ymax)
 }
 
+/// Moves a given value from start to stop by a certain percent.
+pub fn lerp<'gc>(
+    _ctx: vm::Context<'gc>,
+    (start, stop, percent): (f64, f64, f64),
+) -> Result<f64, Infallible> {
+    Ok(start + (stop - start) * percent)
+}
+
+/// Extracts the fractional part of a floating point number.
+pub fn frac<'gc>(_ctx: vm::Context<'gc>, input: f64) -> Result<f64, Infallible> {
+    Ok(input.fract())
+}
+
+/// Returns the smallest difference between two angles, which will be between (-180.0..180.0).
+/// The result of this function, when added to `src` will give `dst`.
+pub fn angle_difference<'gc>(
+    _ctx: vm::Context<'gc>,
+    (dst, src): (f64, f64),
+) -> Result<f64, Infallible> {
+    let diff = (dst - src) % 360.0;
+    let output = if diff > 180.0 {
+        diff - 360.0
+    } else if diff < -180.0 {
+        diff + 360.0
+    } else {
+        diff
+    };
+
+    Ok(output)
+}
+
+/// Computers [`f64::atan2`] for the difference between two points, and then converts
+/// the result into degrees.
+///
+/// This gives the direction from point1 to point2.
+///
+/// Note: this assumes y is down.
+pub fn point_direction<'gc>(
+    _ctx: vm::Context<'gc>,
+    (x1, y1, x2, y2): (f64, f64, f64, f64),
+) -> Result<f64, Infallible> {
+    let dx = x2 - x1;
+    let dy = y1 - y2;
+
+    let mut angle_deg = dy.atan2(dx).to_degrees();
+
+    // we're wrapping since the bottom angles are given as negatives in atan2
+    if angle_deg < 0.0 {
+        angle_deg += 360.0;
+    }
+
+    Ok(angle_deg)
+}
+
+/// Returns the length from tail to tip.
+pub fn point_distance<'gc>(
+    _ctx: vm::Context<'gc>,
+    (tail_x, tail_y, tip_x, tip_y): (f64, f64, f64, f64),
+) -> Result<f64, Infallible> {
+    let x = tip_x - tail_x;
+    let y = tip_y - tail_y;
+
+    let dot = (x * x) + (y * y);
+    Ok(f64::sqrt(dot))
+}
+
+/// Returns the horizontal component of a vector with given length and direction.
+/// `direction` is given in degrees.
+pub fn lengthdir_x<'gc>(
+    _ctx: vm::Context<'gc>,
+    (length, direction): (f64, f64),
+) -> Result<f64, Infallible> {
+    let angle_rad = direction.to_radians();
+    Ok(length * angle_rad.cos())
+}
+
+/// Returns the vertical component of a vector with given length and direction.
+/// `direction` is given in degrees.
+///
+/// Note: y is down.
+pub fn lengthdir_y<'gc>(
+    _ctx: vm::Context<'gc>,
+    (length, direction): (f64, f64),
+) -> Result<f64, Infallible> {
+    let angle_rad = direction.to_radians();
+    Ok(-length * angle_rad.sin())
+}
+
+/// The equivalent to running [`degtorad`] and then [`arctan2`] on the resulting output. In fact,
+/// this is what it does internally.
+pub fn darctan2<'gc>(ctx: vm::Context<'gc>, (y, x): (f64, f64)) -> Result<f64, Infallible> {
+    let Ok(angle) = arctan2(ctx, (y, x));
+    degtorad(ctx, angle)
+}
+
+/// Computes the arc tangent. See [`f64::atan2`] for more information.
+///
+/// Returns results in radians. See [`darctan2`] for one which returns in degrees.
+pub fn arctan2<'gc>(_ctx: vm::Context<'gc>, (y, x): (f64, f64)) -> Result<f64, Infallible> {
+    Ok(y.atan2(x))
+}
+
+/// Converts degrees to radians.
+pub fn degtorad<'gc>(_ctx: vm::Context<'gc>, input: f64) -> Result<f64, Infallible> {
+    Ok(input.to_radians())
+}
+
+/// Converts degrees to radians.
+pub fn radtodeg<'gc>(_ctx: vm::Context<'gc>, input: f64) -> Result<f64, Infallible> {
+    Ok(input.to_degrees())
+}
+
 pub fn math_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_constant(ctx, "NaN", f64::NAN);
     lib.insert_constant(ctx, "infinity", f64::INFINITY);
@@ -223,4 +335,14 @@ pub fn math_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_exec_callback(ctx, "choose", choose);
     lib.insert_callback(ctx, "array_shuffle", array_shuffle);
     lib.insert_callback(ctx, "point_in_rectangle", point_in_rectangle);
+    lib.insert_callback(ctx, "lerp", lerp);
+    lib.insert_callback(ctx, "frac", frac);
+    lib.insert_callback(ctx, "angle_difference", angle_difference);
+    lib.insert_callback(ctx, "point_direction", point_direction);
+    lib.insert_callback(ctx, "lengthdir_x", lengthdir_x);
+    lib.insert_callback(ctx, "lengthdir_y", lengthdir_y);
+    lib.insert_callback(ctx, "darctan2", darctan2);
+    lib.insert_callback(ctx, "arctan2", arctan2);
+    lib.insert_callback(ctx, "degtorad", degtorad);
+    lib.insert_callback(ctx, "radtodeg", radtodeg);
 }
