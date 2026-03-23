@@ -175,10 +175,21 @@ pub fn ds_list_size<'gc>(
     Ok(ds_list.borrow().len() as isize)
 }
 
+pub fn ds_list_clear<'gc>(
+    ctx: vm::Context<'gc>,
+    ds_list: vm::UserData<'gc>,
+) -> Result<(), vm::BadUserDataType> {
+    let ds_list = DsList::downcast_write(&ctx, ds_list)?;
+    let mut vec = DsList::borrow_mut(ds_list);
+    vec.clear();
+    Ok(())
+}
+
 pub fn ds_list_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "ds_list_create", ds_list_create);
     lib.insert_exec_callback(ctx, "ds_list_add", ds_list_add);
     lib.insert_callback(ctx, "ds_list_find_index", ds_list_find_index);
     lib.insert_callback(ctx, "ds_list_delete", ds_list_delete);
     lib.insert_callback(ctx, "ds_list_size", ds_list_size);
+    lib.insert_callback(ctx, "ds_list_clear", ds_list_clear);
 }
