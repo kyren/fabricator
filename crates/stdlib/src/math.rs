@@ -339,6 +339,7 @@ pub fn math_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "frac", frac);
     lib.insert_callback(ctx, "angle_difference", angle_difference);
     lib.insert_callback(ctx, "point_direction", point_direction);
+    lib.insert_callback(ctx, "point_distance", point_distance);
     lib.insert_callback(ctx, "lengthdir_x", lengthdir_x);
     lib.insert_callback(ctx, "lengthdir_y", lengthdir_y);
     lib.insert_callback(ctx, "darctan2", darctan2);
