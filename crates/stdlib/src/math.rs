@@ -114,48 +114,53 @@ pub fn random_set_seed<'gc>(ctx: vm::Context<'gc>, seed: u32) -> Result<(), Infa
     Ok(())
 }
 
-pub fn random<'gc>(ctx: vm::Context<'gc>, upper: f64) -> Result<f64, vm::RuntimeError> {
-    if upper < 0.0 {
-        return Err(vm::RuntimeError::msg(format!(
-            "`random` upper range {upper} cannot be <= 0.0"
-        )));
-    }
-    let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
-    Ok(rng.random_range(0.0..=upper))
+/// This is a shorthand, effectively, for `random_range(0.0, other_bound)`. `other_bound`
+/// can be less than 0 or greater than zero.
+///
+/// Returns `undefined` if given NaN or `infinity` or `-infinity`.
+pub fn random<'gc>(ctx: vm::Context<'gc>, other_bound: f64) -> Result<Option<f64>, Infallible> {
+    random_range(ctx, (0.0, other_bound))
+}
+/// This is a shorthand, effectively, for `irandom_range(0, other_bound)`. `other_bound`
+/// can be less than 0 or greater than zero
+pub fn irandom<'gc>(ctx: vm::Context<'gc>, other_bound: i64) -> Result<i64, Infallible> {
+    irandom_range(ctx, (0, other_bound))
 }
 
-pub fn irandom<'gc>(ctx: vm::Context<'gc>, upper: i64) -> Result<i64, vm::RuntimeError> {
-    if upper < 0 {
-        return Err(vm::RuntimeError::msg(format!(
-            "`irandom` upper range {upper} cannot be <= 0"
-        )));
-    }
-    let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
-    Ok(rng.random_range(0..=upper))
-}
-
+/// Returns a random number within the given range. The two parameters
+/// can be in either order.
+///
+/// Returns `undefined` if either number given is NaN or `infinity` or `-infinity`.
 pub fn random_range<'gc>(
     ctx: vm::Context<'gc>,
-    (lower, upper): (f64, f64),
-) -> Result<f64, vm::RuntimeError> {
-    if upper < lower {
-        return Err(vm::RuntimeError::msg(format!(
-            "`random_range`: invalid range [{lower}, {upper}]"
-        )));
-    }
+    (left, right): (f64, f64),
+) -> Result<Option<f64>, Infallible> {
+    let range_test = left - right;
+
+    let (lower, upper) = if !range_test.is_finite() {
+        return Ok(None);
+    } else if range_test < 0.0 {
+        (left, right)
+    } else {
+        (right, left)
+    };
+
     let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
-    Ok(rng.random_range(lower..=upper))
+    Ok(Some(rng.random_range(lower..=upper)))
 }
 
+/// Returns a random number within the given range. The two parameters
+/// can be in either order.
 pub fn irandom_range<'gc>(
     ctx: vm::Context<'gc>,
-    (lower, upper): (i64, i64),
-) -> Result<i64, vm::RuntimeError> {
-    if upper < lower {
-        return Err(vm::RuntimeError::msg(format!(
-            "`irandom_range`: invalid range [{lower}, {upper}]"
-        )));
-    }
+    (left, right): (i64, i64),
+) -> Result<i64, Infallible> {
+    let (lower, upper) = match left.cmp(&right) {
+        std::cmp::Ordering::Less => (left, right),
+        std::cmp::Ordering::Equal => return Ok(left),
+        std::cmp::Ordering::Greater => (right, left),
+    };
+
     let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
     Ok(rng.random_range(lower..=upper))
 }
