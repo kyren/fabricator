@@ -114,48 +114,53 @@ pub fn random_set_seed<'gc>(ctx: vm::Context<'gc>, seed: u32) -> Result<(), Infa
     Ok(())
 }
 
-pub fn random<'gc>(ctx: vm::Context<'gc>, upper: f64) -> Result<f64, vm::RuntimeError> {
-    if upper < 0.0 {
-        return Err(vm::RuntimeError::msg(format!(
-            "`random` upper range {upper} cannot be <= 0.0"
-        )));
-    }
-    let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
-    Ok(rng.random_range(0.0..=upper))
+/// This is a shorthand, effectively, for `random_range(0.0, other_bound)`. `other_bound`
+/// can be less than 0 or greater than zero.
+///
+/// Returns `undefined` if given NaN or `infinity` or `-infinity`.
+pub fn random<'gc>(ctx: vm::Context<'gc>, other_bound: f64) -> Result<Option<f64>, Infallible> {
+    random_range(ctx, (0.0, other_bound))
+}
+/// This is a shorthand, effectively, for `irandom_range(0, other_bound)`. `other_bound`
+/// can be less than 0 or greater than zero
+pub fn irandom<'gc>(ctx: vm::Context<'gc>, other_bound: i64) -> Result<i64, Infallible> {
+    irandom_range(ctx, (0, other_bound))
 }
 
-pub fn irandom<'gc>(ctx: vm::Context<'gc>, upper: i64) -> Result<i64, vm::RuntimeError> {
-    if upper < 0 {
-        return Err(vm::RuntimeError::msg(format!(
-            "`irandom` upper range {upper} cannot be <= 0"
-        )));
-    }
-    let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
-    Ok(rng.random_range(0..=upper))
-}
-
+/// Returns a random number within the given range. The two parameters
+/// can be in either order.
+///
+/// Returns `undefined` if either number given is NaN or `infinity` or `-infinity`.
 pub fn random_range<'gc>(
     ctx: vm::Context<'gc>,
-    (lower, upper): (f64, f64),
-) -> Result<f64, vm::RuntimeError> {
-    if upper < lower {
-        return Err(vm::RuntimeError::msg(format!(
-            "`random_range`: invalid range [{lower}, {upper}]"
-        )));
-    }
+    (left, right): (f64, f64),
+) -> Result<Option<f64>, Infallible> {
+    let range_test = left - right;
+
+    let (lower, upper) = if !range_test.is_finite() {
+        return Ok(None);
+    } else if range_test < 0.0 {
+        (left, right)
+    } else {
+        (right, left)
+    };
+
     let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
-    Ok(rng.random_range(lower..=upper))
+    Ok(Some(rng.random_range(lower..=upper)))
 }
 
+/// Returns a random number within the given range. The two parameters
+/// can be in either order.
 pub fn irandom_range<'gc>(
     ctx: vm::Context<'gc>,
-    (lower, upper): (i64, i64),
-) -> Result<i64, vm::RuntimeError> {
-    if upper < lower {
-        return Err(vm::RuntimeError::msg(format!(
-            "`irandom_range`: invalid range [{lower}, {upper}]"
-        )));
-    }
+    (left, right): (i64, i64),
+) -> Result<i64, Infallible> {
+    let (lower, upper) = match left.cmp(&right) {
+        std::cmp::Ordering::Less => (left, right),
+        std::cmp::Ordering::Equal => return Ok(left),
+        std::cmp::Ordering::Greater => (right, left),
+    };
+
     let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();
     Ok(rng.random_range(lower..=upper))
 }
@@ -197,6 +202,118 @@ pub fn point_in_rectangle<'gc>(
     Ok(px >= xmin && px <= xmax && py >= ymin && py <= ymax)
 }
 
+/// Moves a given value from start to stop by a certain percent.
+pub fn lerp<'gc>(
+    _ctx: vm::Context<'gc>,
+    (start, stop, percent): (f64, f64, f64),
+) -> Result<f64, Infallible> {
+    Ok(start + (stop - start) * percent)
+}
+
+/// Extracts the fractional part of a floating point number.
+pub fn frac<'gc>(_ctx: vm::Context<'gc>, input: f64) -> Result<f64, Infallible> {
+    Ok(input.fract())
+}
+
+/// Returns the smallest difference between two angles, which will be between (-180.0..180.0).
+/// The result of this function, when added to `src` will give `dst`.
+pub fn angle_difference<'gc>(
+    _ctx: vm::Context<'gc>,
+    (dst, src): (f64, f64),
+) -> Result<f64, Infallible> {
+    let diff = (dst - src) % 360.0;
+    let output = if diff > 180.0 {
+        diff - 360.0
+    } else if diff < -180.0 {
+        diff + 360.0
+    } else {
+        diff
+    };
+
+    Ok(output)
+}
+
+/// Computers [`f64::atan2`] for the difference between two points, and then converts
+/// the result into degrees.
+///
+/// This gives the direction from point1 to point2.
+///
+/// Note: this assumes y is down.
+pub fn point_direction<'gc>(
+    _ctx: vm::Context<'gc>,
+    (x1, y1, x2, y2): (f64, f64, f64, f64),
+) -> Result<f64, Infallible> {
+    let dx = x2 - x1;
+    let dy = y1 - y2;
+
+    let mut angle_deg = dy.atan2(dx).to_degrees();
+
+    // we're wrapping since the bottom angles are given as negatives in atan2
+    if angle_deg < 0.0 {
+        angle_deg += 360.0;
+    }
+
+    Ok(angle_deg)
+}
+
+/// Returns the length from tail to tip.
+pub fn point_distance<'gc>(
+    _ctx: vm::Context<'gc>,
+    (tail_x, tail_y, tip_x, tip_y): (f64, f64, f64, f64),
+) -> Result<f64, Infallible> {
+    let x = tip_x - tail_x;
+    let y = tip_y - tail_y;
+
+    let dot = (x * x) + (y * y);
+    Ok(f64::sqrt(dot))
+}
+
+/// Returns the horizontal component of a vector with given length and direction.
+/// `direction` is given in degrees.
+pub fn lengthdir_x<'gc>(
+    _ctx: vm::Context<'gc>,
+    (length, direction): (f64, f64),
+) -> Result<f64, Infallible> {
+    let angle_rad = direction.to_radians();
+    Ok(length * angle_rad.cos())
+}
+
+/// Returns the vertical component of a vector with given length and direction.
+/// `direction` is given in degrees.
+///
+/// Note: y is down.
+pub fn lengthdir_y<'gc>(
+    _ctx: vm::Context<'gc>,
+    (length, direction): (f64, f64),
+) -> Result<f64, Infallible> {
+    let angle_rad = direction.to_radians();
+    Ok(-length * angle_rad.sin())
+}
+
+/// The equivalent to running [`degtorad`] and then [`arctan2`] on the resulting output. In fact,
+/// this is what it does internally.
+pub fn darctan2<'gc>(ctx: vm::Context<'gc>, (y, x): (f64, f64)) -> Result<f64, Infallible> {
+    let Ok(angle) = arctan2(ctx, (y, x));
+    degtorad(ctx, angle)
+}
+
+/// Computes the arc tangent. See [`f64::atan2`] for more information.
+///
+/// Returns results in radians. See [`darctan2`] for one which returns in degrees.
+pub fn arctan2<'gc>(_ctx: vm::Context<'gc>, (y, x): (f64, f64)) -> Result<f64, Infallible> {
+    Ok(y.atan2(x))
+}
+
+/// Converts degrees to radians.
+pub fn degtorad<'gc>(_ctx: vm::Context<'gc>, input: f64) -> Result<f64, Infallible> {
+    Ok(input.to_radians())
+}
+
+/// Converts degrees to radians.
+pub fn radtodeg<'gc>(_ctx: vm::Context<'gc>, input: f64) -> Result<f64, Infallible> {
+    Ok(input.to_degrees())
+}
+
 pub fn math_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_constant(ctx, "NaN", f64::NAN);
     lib.insert_constant(ctx, "infinity", f64::INFINITY);
@@ -223,4 +340,15 @@ pub fn math_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_exec_callback(ctx, "choose", choose);
     lib.insert_callback(ctx, "array_shuffle", array_shuffle);
     lib.insert_callback(ctx, "point_in_rectangle", point_in_rectangle);
+    lib.insert_callback(ctx, "lerp", lerp);
+    lib.insert_callback(ctx, "frac", frac);
+    lib.insert_callback(ctx, "angle_difference", angle_difference);
+    lib.insert_callback(ctx, "point_direction", point_direction);
+    lib.insert_callback(ctx, "point_distance", point_distance);
+    lib.insert_callback(ctx, "lengthdir_x", lengthdir_x);
+    lib.insert_callback(ctx, "lengthdir_y", lengthdir_y);
+    lib.insert_callback(ctx, "darctan2", darctan2);
+    lib.insert_callback(ctx, "arctan2", arctan2);
+    lib.insert_callback(ctx, "degtorad", degtorad);
+    lib.insert_callback(ctx, "radtodeg", radtodeg);
 }
