@@ -130,6 +130,12 @@ impl<'gc> Deref for String<'gc> {
     }
 }
 
+impl<'gc> Borrow<str> for String<'gc> {
+    fn borrow(&self) -> &str {
+        self
+    }
+}
+
 pub type StringMap<'gc, V> = FxHashMap<String<'gc>, V>;
 
 struct InternedStringsInner<'gc>(RefLock<FxHashMap<SharedStr, GcWeak<'gc, SharedStr>>>);
