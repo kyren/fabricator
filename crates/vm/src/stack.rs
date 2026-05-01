@@ -1,12 +1,12 @@
 use std::{
     iter,
-    ops::{Bound, Index, IndexMut, RangeBounds},
+    ops::{self, Bound, Index, IndexMut, RangeBounds},
     slice::{self, SliceIndex},
     vec,
 };
 
 use crate::{
-    conversion::{FromMultiValue, FromValue, IntoMultiValue, IntoValue, TypeError},
+    conversion::{FromMultiValue, FromValue, IntoMultiValue, TypeError},
     interpreter::Context,
     value::Value,
 };
@@ -54,7 +54,7 @@ impl<'gc, 'a> Stack<'gc, 'a> {
             .unwrap_or_default()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Value<'gc>> {
+    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 
@@ -64,36 +64,12 @@ impl<'gc, 'a> Stack<'gc, 'a> {
     }
 
     #[inline]
-    pub fn push_front(&mut self, value: impl Into<Value<'gc>>) {
-        self.values.insert(self.bottom, value.into());
-    }
-
-    #[inline]
     pub fn pop_back(&mut self) -> Option<Value<'gc>> {
         if self.values.len() > self.bottom {
             Some(self.values.pop().unwrap())
         } else {
             None
         }
-    }
-
-    #[inline]
-    pub fn pop_front(&mut self) -> Option<Value<'gc>> {
-        if self.values.len() > self.bottom {
-            Some(self.values.remove(self.bottom))
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.values.len() - self.bottom
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.values.len() == self.bottom
     }
 
     #[inline]
@@ -141,38 +117,6 @@ impl<'gc, 'a> Stack<'gc, 'a> {
     }
 
     #[inline]
-    pub fn into_back(&mut self, ctx: Context<'gc>, v: impl IntoMultiValue<'gc>) {
-        for v in v.into_multi_value(ctx) {
-            self.values.push(v.into_value(ctx));
-        }
-    }
-
-    #[inline]
-    pub fn into_front(&mut self, ctx: Context<'gc>, v: impl IntoMultiValue<'gc>) {
-        let mut c = 0;
-        for v in v.into_multi_value(ctx) {
-            c += 1;
-            self.values.push(v.into_value(ctx));
-        }
-        self.values[self.bottom..].rotate_right(c);
-    }
-
-    #[inline]
-    pub fn from_back<V: FromValue<'gc>>(&mut self, ctx: Context<'gc>) -> Result<V, TypeError> {
-        V::from_value(ctx, self.pop_back().unwrap_or_default())
-    }
-
-    #[inline]
-    pub fn from_front<V: FromMultiValue<'gc>>(
-        &mut self,
-        ctx: Context<'gc>,
-    ) -> Result<V, TypeError> {
-        // `Vec::extract_if` does not remove values if the iterator is not consumed, which is what
-        // we want here.
-        V::from_multi_value(ctx, self.values.extract_if(self.bottom.., |_| true))
-    }
-
-    #[inline]
     pub fn consume<V: FromMultiValue<'gc>>(&mut self, ctx: Context<'gc>) -> Result<V, TypeError> {
         V::from_multi_value(ctx, self.drain(..))
     }
@@ -181,6 +125,20 @@ impl<'gc, 'a> Stack<'gc, 'a> {
     pub fn replace(&mut self, ctx: Context<'gc>, v: impl IntoMultiValue<'gc>) {
         self.clear();
         self.extend(v.into_multi_value(ctx));
+    }
+}
+
+impl<'gc, 'a> ops::Deref for Stack<'gc, 'a> {
+    type Target = [Value<'gc>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.values[self.bottom..]
+    }
+}
+
+impl<'gc, 'a> ops::DerefMut for Stack<'gc, 'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values[self.bottom..]
     }
 }
 

@@ -109,7 +109,7 @@ pub fn script_execute<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
 ) -> Result<(), vm::RuntimeError> {
-    let mut func: vm::Function = exec.stack().from_front(ctx)?;
+    let mut func: vm::Function = exec.stack().from_index(ctx, 0)?;
     // `script_execute` is documented as calling the provided function in the *calling context*,
     // even if it is a bound method.
     if !func.this().is_undefined() {
@@ -117,7 +117,7 @@ pub fn script_execute<'gc>(
         // callbacks while ignoring any bound `this`.
         func = func.rebind(&ctx, vm::Value::Undefined);
     }
-    Ok(exec.call(ctx, func)?)
+    Ok(exec.with_stack_bottom(1).call(ctx, func)?)
 }
 
 pub fn script_execute_ext<'gc>(
