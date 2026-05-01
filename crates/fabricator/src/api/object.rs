@@ -171,7 +171,7 @@ impl<'gc> ObjectUserData<'gc> {
                         State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
                             while idx < array.len() {
                                 let ud: vm::UserData =
-                                    vm::FromValue::from_value(ctx, array.get(idx))?;
+                                    vm::FromValue::from_value(ctx, array.get(idx).unwrap())?;
                                 let instance = InstanceUserData::downcast(ud)?;
                                 if state.instances.get(instance.id).is_some_and(|i| i.active) {
                                     return Ok(Some(ud));
@@ -300,7 +300,8 @@ pub fn all<'gc>(ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
                 let next_instance =
                     State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
                         while idx < array.len() {
-                            let ud: vm::UserData = vm::FromValue::from_value(ctx, array.get(idx))?;
+                            let ud: vm::UserData =
+                                vm::FromValue::from_value(ctx, array.get(idx).unwrap())?;
                             let instance = InstanceUserData::downcast(ud)?;
                             if state.instances.get(instance.id).is_some_and(|i| i.active) {
                                 idx += 1;

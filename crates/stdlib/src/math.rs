@@ -194,9 +194,9 @@ pub fn array_shuffle<'gc>(
     let (src_range, is_reverse) = resolve_array_range(src.len(), src_index, length)?;
 
     let mut vals: Vec<_> = if is_reverse {
-        src_range.rev().map(|i| src.get(i)).collect()
+        src_range.rev().map(|i| src.get(i).unwrap()).collect()
     } else {
-        src_range.map(|i| src.get(i)).collect()
+        src_range.map(|i| src.get(i).unwrap()).collect()
     };
 
     let mut rng = ctx.singleton::<RngSingleton>().rng.borrow_mut();

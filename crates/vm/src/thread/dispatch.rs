@@ -55,6 +55,10 @@ pub enum OpError {
     },
 }
 
+#[derive(Debug, Error)]
+#[error("out of bounds access on array for index {0}")]
+pub struct ArrayBoundsError(usize);
+
 pub(super) enum Next<'gc> {
     Call {
         function: Function<'gc>,
@@ -173,7 +177,7 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
                         target: target.into(),
                         index: indexes[0].into(),
                     })?;
-                Ok(array.get(index))
+                Ok(array.get(index).ok_or(ArrayBoundsError(index))?)
             }
             Value::UserData(user_data) => Ok(user_data.get_index(self.ctx, indexes)?),
             _ => Err(OpError::BadArray {

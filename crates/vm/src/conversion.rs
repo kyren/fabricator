@@ -1,4 +1,4 @@
-use std::{array, iter, ops, string::String as StdString};
+use std::{array, borrow::Cow, iter, ops, string::String as StdString};
 
 use thiserror::Error;
 
@@ -13,11 +13,23 @@ use crate::{
     value::{Function, Number, Value},
 };
 
-#[derive(Debug, Clone, Copy, Error)]
+#[derive(Debug, Clone, Error)]
 #[error("type error, expected {expected}, found {found}")]
 pub struct TypeError {
-    pub expected: &'static str,
-    pub found: &'static str,
+    pub expected: Cow<'static, str>,
+    pub found: Cow<'static, str>,
+}
+
+impl TypeError {
+    pub fn new(
+        expected: impl Into<Cow<'static, str>>,
+        found: impl Into<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            expected: expected.into(),
+            found: found.into(),
+        }
+    }
 }
 
 pub trait IntoValue<'gc> {
@@ -180,16 +192,16 @@ macro_rules! impl_int_from {
                         if let Ok(i) = <$i>::try_from(i) {
                             Ok(i)
                         } else {
-                            Err(TypeError {
-                                expected: stringify!($i),
-                                found: "integer out of range",
-                            })
+                            Err(TypeError::new (
+                                stringify!($i),
+                                "integer out of range",
+                            ))
                         }
                     } else {
-                        Err(TypeError {
-                            expected: stringify!($i),
-                            found: value.type_name(),
-                        })
+                        Err(TypeError::new (
+                            stringify!($i),
+                            value.type_name(),
+                        ))
                     }
                 }
             }
@@ -209,10 +221,10 @@ macro_rules! impl_float_from {
                     if let Some(n) = value.cast_float() {
                         Ok(n as $f)
                     } else {
-                        Err(TypeError {
-                            expected: stringify!($f),
-                            found: value.type_name(),
-                        })
+                        Err(TypeError::new (
+                            stringify!($f),
+                            value.type_name(),
+                        ))
                     }
                 }
             }
@@ -226,10 +238,7 @@ impl<'gc> FromValue<'gc> for Number {
         if let Some(n) = value.to_number() {
             Ok(n)
         } else {
-            Err(TypeError {
-                expected: "numeric value",
-                found: value.type_name(),
-            })
+            Err(TypeError::new("numeric value", value.type_name()))
         }
     }
 }
@@ -245,10 +254,10 @@ macro_rules! impl_from {
                     match value {
                         Value::$e(a) => Ok(a),
                         _ => {
-                            Err(TypeError {
-                                expected: stringify!($e),
-                                found: value.type_name(),
-                            })
+                            Err(TypeError::new (
+                                stringify!($e),
+                                value.type_name(),
+                            ))
                         }
                     }
                 }
@@ -269,10 +278,7 @@ impl<'gc> FromValue<'gc> for String<'gc> {
         if let Some(s) = value.as_string() {
             Ok(s)
         } else {
-            Err(TypeError {
-                expected: "string",
-                found: value.type_name(),
-            })
+            Err(TypeError::new("string", value.type_name()))
         }
     }
 }
@@ -282,10 +288,7 @@ impl<'gc> FromValue<'gc> for Function<'gc> {
         match value {
             Value::Closure(closure) => Ok(Function::Closure(closure)),
             Value::Callback(callback) => Ok(Function::Callback(callback)),
-            v => Err(TypeError {
-                expected: "callback or closure",
-                found: v.type_name(),
-            }),
+            v => Err(TypeError::new("callback or closure", v.type_name())),
         }
     }
 }
@@ -304,13 +307,10 @@ impl<'gc, T: FromValue<'gc>> FromValue<'gc> for Vec<T> {
     fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
         if let Value::Array(array) = value {
             (0..array.len())
-                .map(|i| T::from_value(ctx, array.get(i)))
+                .map(|i| T::from_value(ctx, array.get(i).unwrap()))
                 .collect()
         } else {
-            Err(TypeError {
-                expected: "array",
-                found: value.type_name(),
-            })
+            Err(TypeError::new("array", value.type_name()))
         }
     }
 }
@@ -318,16 +318,20 @@ impl<'gc, T: FromValue<'gc>> FromValue<'gc> for Vec<T> {
 impl<'gc, T: FromValue<'gc>, const N: usize> FromValue<'gc> for [T; N] {
     fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
         if let Value::Array(array) = value {
+            if array.len() != N {
+                return Err(TypeError::new(
+                    format!("array of length {N}"),
+                    format!("array of length {}", array.len()),
+                ));
+            }
+
             let mut res: [Option<T>; N] = array::from_fn(|_| None);
             for i in 0..N {
-                res[i] = Some(T::from_value(ctx, array.get(i))?);
+                res[i] = Some(T::from_value(ctx, array.get(i).unwrap())?);
             }
             Ok(res.map(|r| r.unwrap()))
         } else {
-            Err(TypeError {
-                expected: "sequence",
-                found: value.type_name(),
-            })
+            Err(TypeError::new("sequence", value.type_name()))
         }
     }
 }

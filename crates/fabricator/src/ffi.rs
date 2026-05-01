@@ -58,10 +58,9 @@ impl FfiNumber {
 
 impl<'gc> vm::FromValue<'gc> for FfiNumber {
     fn from_value(ctx: vm::Context<'gc>, value: vm::Value<'gc>) -> Result<Self, vm::TypeError> {
-        Ok(FfiNumber(value.coerce_float(ctx).ok_or(vm::TypeError {
-            expected: "value coercible to float",
-            found: value.type_name(),
-        })?))
+        Ok(FfiNumber(value.coerce_float(ctx).ok_or(
+            vm::TypeError::new("value coercible to float", value.type_name()),
+        )?))
     }
 }
 
@@ -100,10 +99,7 @@ impl<'gc> vm::FromValue<'gc> for FfiPointer {
             }
         }
 
-        Err(vm::TypeError {
-            expected: "pointer type",
-            found: value.type_name(),
-        })
+        Err(vm::TypeError::new("pointer type", value.type_name()))
     }
 }
 

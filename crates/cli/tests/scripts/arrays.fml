@@ -24,7 +24,7 @@ var b = array_create(3, "hello");
 assert(b[0] == "hello");
 assert(b[1] == "hello");
 assert(b[2] == "hello");
-assert(b[3] == undefined);
+assert(pcall(function() { var _ = b[3]; }) == false);
 
 var c = array_create_ext(3, function(i) {
 	return i;
@@ -32,7 +32,7 @@ var c = array_create_ext(3, function(i) {
 assert(c[0] == 0);
 assert(c[1] == 1);
 assert(c[2] == 2);
-assert(c[3] == undefined);
+assert(pcall(function() { var _ = c[3]; }) == false);
 
 var c = [
 	0,

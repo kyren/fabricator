@@ -68,9 +68,7 @@ impl<'gc> LayerIdUserData<'gc> {
         userdata
     }
 
-    pub fn downcast(
-        userdata: vm::UserData<'gc>,
-    ) -> Result<&'gc Self, vm::BadUserDataType> {
+    pub fn downcast(userdata: vm::UserData<'gc>) -> Result<&'gc Self, vm::BadUserDataType> {
         userdata.downcast::<Rootable![LayerIdUserData<'_>]>()
     }
 }
@@ -93,11 +91,7 @@ pub fn find_layer<'gc>(
                 Err(vm::RuntimeError::msg("expired layer ID"))
             }
         }
-        _ => Err(vm::TypeError {
-            expected: "userdata or string",
-            found: layer_id_or_name.type_name(),
-        }
-        .into()),
+        _ => Err(vm::TypeError::new("userdata or string", layer_id_or_name.type_name()).into()),
     }
 }
 
@@ -151,11 +145,9 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
                 vm::Value::UserData(ud) => {
                     Ok(state.layers.contains(LayerIdUserData::downcast(ud)?.id))
                 }
-                _ => Err(vm::TypeError {
-                    expected: "userdata or string",
-                    found: layer_id_or_name.type_name(),
-                }
-                .into()),
+                _ => Err(
+                    vm::TypeError::new("userdata or string", layer_id_or_name.type_name()).into(),
+                ),
             }
         })??;
 

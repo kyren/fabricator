@@ -259,6 +259,7 @@ pub fn string_trim_end<'gc>(
             for i in 0..patterns.len() {
                 let pat = patterns
                     .get(i)
+                    .unwrap()
                     .coerce_string(ctx)
                     .ok_or_else(|| vm::RuntimeError::msg("trim pattern must be a string"))?;
                 let new_res = res.trim_end_matches(pat.as_str());

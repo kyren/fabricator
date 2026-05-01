@@ -171,10 +171,9 @@ pub fn ds_map_keys_to_array<'gc>(
 ) -> Result<vm::Array<'gc>, vm::TypeError> {
     let map = match DsMap::downcast(map) {
         Ok(v) => Ok(v),
-        Err(fabricator_vm::BadUserDataType) => Err(vm::TypeError {
-            expected: "DsMap",
-            found: "a different user data",
-        }),
+        Err(fabricator_vm::BadUserDataType) => {
+            Err(vm::TypeError::new("DsMap", "a different user data"))
+        }
     }?;
 
     let map = map.borrow();
@@ -203,15 +202,11 @@ pub fn ds_map_delete<'gc>(
     let map = match map {
         vm::Value::UserData(user_data) => match DsMap::downcast_write(&ctx, user_data) {
             Ok(v) => Ok(v),
-            Err(fabricator_vm::BadUserDataType) => Err(vm::TypeError {
-                expected: "DsMap",
-                found: "a different user data",
-            }),
+            Err(fabricator_vm::BadUserDataType) => {
+                Err(vm::TypeError::new("DsMap", "a different user data"))
+            }
         },
-        other => Err(vm::TypeError {
-            expected: "user data",
-            found: other.type_name(),
-        }),
+        other => Err(vm::TypeError::new("user data", other.type_name())),
     }?;
 
     let mut map = DsMap::borrow_mut(map);

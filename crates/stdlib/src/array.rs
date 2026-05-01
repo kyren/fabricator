@@ -145,11 +145,11 @@ pub fn array_copy<'gc>(
 
     if is_reverse {
         for (i, ind) in src_range.rev().enumerate() {
-            dest.set(&ctx, dest_index + i, src.get(ind));
+            dest.set(&ctx, dest_index + i, src.get(ind).unwrap());
         }
     } else {
         for (i, ind) in src_range.enumerate() {
-            dest.set(&ctx, dest_index + i, src.get(ind));
+            dest.set(&ctx, dest_index + i, src.get(ind).unwrap());
         }
     }
     Ok(())

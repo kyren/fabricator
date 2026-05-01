@@ -218,6 +218,7 @@ pub fn assets_api<'gc>(
                         for i in 0..array.len() {
                             let s = array
                                 .get(i)
+                                .unwrap()
                                 .as_string()
                                 .ok_or_else(|| vm::RuntimeError::msg("tag must be a string"))?;
                             if !tags.contains(s.as_str()) {

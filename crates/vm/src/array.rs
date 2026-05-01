@@ -66,8 +66,8 @@ impl<'gc> Array<'gc> {
     }
 
     #[inline]
-    pub fn get(self, index: usize) -> Value<'gc> {
-        self.0.borrow().get(index).copied().unwrap_or_default()
+    pub fn get(self, index: usize) -> Option<Value<'gc>> {
+        self.0.borrow().get(index).copied()
     }
 
     #[inline]

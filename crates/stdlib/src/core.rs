@@ -37,19 +37,13 @@ pub fn int64<'gc>(ctx: vm::Context<'gc>, arg: vm::Value<'gc>) -> Result<i64, vm:
     } else if let vm::Value::String(i) = arg {
         Ok(i.parse()?)
     } else {
-        Err(vm::TypeError {
-            expected: "number or string",
-            found: arg.type_name(),
-        }
-        .into())
+        Err(vm::TypeError::new("number or string", arg.type_name()).into())
     }
 }
 
 pub fn real<'gc>(ctx: vm::Context<'gc>, arg: vm::Value<'gc>) -> Result<f64, vm::TypeError> {
-    arg.coerce_float(ctx).ok_or_else(|| vm::TypeError {
-        expected: "value coercible to float",
-        found: arg.type_name(),
-    })
+    arg.coerce_float(ctx)
+        .ok_or_else(|| vm::TypeError::new("value coercible to float", arg.type_name()))
 }
 
 pub fn is_numeric<'gc>(_ctx: vm::Context<'gc>, arg: vm::Value<'gc>) -> Result<bool, Infallible> {
@@ -140,11 +134,11 @@ pub fn script_execute_ext<'gc>(
         let (range, reverse) = resolve_array_range(args.len(), offset, count)?;
         if reverse {
             for i in range.rev() {
-                exec.stack().push_back(args.get(i));
+                exec.stack().push_back(args.get(i).unwrap());
             }
         } else {
             for i in range {
-                exec.stack().push_back(args.get(i));
+                exec.stack().push_back(args.get(i).unwrap());
             }
         }
     }
@@ -173,11 +167,11 @@ pub fn method_call<'gc>(
         let (range, reverse) = resolve_array_range(args.len(), offset, count)?;
         if reverse {
             for i in range.rev() {
-                exec.stack().push_back(args.get(i));
+                exec.stack().push_back(args.get(i).unwrap());
             }
         } else {
             for i in range {
-                exec.stack().push_back(args.get(i));
+                exec.stack().push_back(args.get(i).unwrap());
             }
         }
     }
