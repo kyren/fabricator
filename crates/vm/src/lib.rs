@@ -38,7 +38,10 @@ pub use self::{
         StashedUserDataMethods,
     },
     string::{InternedStrings, SharedStr, String, StringMap},
-    thread::{Backtrace, BacktraceFrame, CallError, Execution, Hook, OpError, Thread, VmError},
+    thread::{
+        ArrayBoundsError, Backtrace, BacktraceFrame, CallError, Execution, Hook, OpError, Thread,
+        VmError,
+    },
     user_data::{BadUserDataType, UserData, UserDataIter, UserDataMeta, UserDataMethods},
     value::{Function, Value},
 };

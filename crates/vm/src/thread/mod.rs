@@ -3,7 +3,7 @@ mod error;
 mod thread;
 
 pub use self::{
-    dispatch::OpError,
+    dispatch::{ArrayBoundsError, OpError},
     error::{
         BacktraceFrame, CallError, ClosureBacktraceFrame, ExternBacktraceFrame,
         ExternClosureBacktraceFrame, VmError,
