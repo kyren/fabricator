@@ -1,4 +1,4 @@
-use std::{error::Error as StdError, fmt, ops, ptr, sync::Arc};
+use std::{error::Error as StdError, fmt, ops, sync::Arc};
 
 use gc_arena::Collect;
 
@@ -8,19 +8,19 @@ use gc_arena::Collect;
 /// this type contains its error inside an `Arc` pointer to allow for this.
 #[derive(Clone, Collect)]
 #[collect(require_static)]
-pub struct RuntimeError(pub Arc<ThinError>);
+pub struct RuntimeError(pub ThinArcError);
 
 impl fmt::Debug for RuntimeError {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&**self.0, f)
+        fmt::Debug::fmt(self.0.err_ref(), f)
     }
 }
 
 impl fmt::Display for RuntimeError {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&**self.0, f)
+        fmt::Display::fmt(self.0.err_ref(), f)
     }
 }
 
@@ -36,41 +36,20 @@ impl ops::Deref for RuntimeError {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &**self.0
+        self.0.err_ref()
     }
 }
 
 impl AsRef<dyn StdError + Send + Sync + 'static> for RuntimeError {
     #[inline]
     fn as_ref(&self) -> &(dyn StdError + Send + Sync + 'static) {
-        &**self.0
+        self.0.err_ref()
     }
 }
 
 impl RuntimeError {
     pub fn new<E: StdError + Send + Sync + 'static>(err: E) -> Self {
-        #[repr(C)]
-        struct HeaderError<E> {
-            header: ThinError,
-            error: E,
-        }
-
-        unsafe fn error_ref<E: StdError + Send + Sync + 'static>(
-            ptr: *const ThinError,
-        ) -> *const (dyn StdError + Send + Sync + 'static) {
-            let ptr = ptr as *const HeaderError<E>;
-            unsafe { &(*ptr).error as *const (dyn StdError + Send + Sync + 'static) }
-        }
-
-        let he = Arc::new(HeaderError {
-            header: ThinError {
-                error_ref: error_ref::<E>,
-            },
-            error: err,
-        });
-
-        // SAFETY: `HeaderError` starts with `RuntimeErrorInner` and is `#[repr(C)]`.
-        RuntimeError(unsafe { Arc::from_raw(Arc::into_raw(he) as *const ThinError) })
+        RuntimeError(ThinArcError::new(err))
     }
 
     pub fn from_boxed(boxed_err: Box<dyn StdError + Send + Sync + 'static>) -> Self {
@@ -129,7 +108,7 @@ impl RuntimeError {
 
     /// Convert this `RuntimeError` into a cloneable type that directly implements [`StdError`].
     ///
-    /// This conversion is free and only changes the wrapper type around the inner `ThinError`.
+    /// This conversion is free and only changes the wrapper type around the inner `ThinArcError`.
     #[inline]
     pub fn into_stderr(self) -> SharedError {
         SharedError(self.0)
@@ -138,25 +117,25 @@ impl RuntimeError {
 
 #[derive(Clone, Collect)]
 #[collect(require_static)]
-pub struct SharedError(pub Arc<ThinError>);
+pub struct SharedError(pub ThinArcError);
 
 impl fmt::Debug for SharedError {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&**self.0, f)
+        fmt::Debug::fmt(self.0.err_ref(), f)
     }
 }
 
 impl fmt::Display for SharedError {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&**self.0, f)
+        fmt::Display::fmt(self.0.err_ref(), f)
     }
 }
 
 impl StdError for SharedError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.0.source()
+        self.0.err_ref().source()
     }
 }
 
@@ -166,24 +145,125 @@ impl SharedError {
     }
 }
 
-/// Performance is extremely sensitive to the size of `RuntimeError`, so we represent it as a single
-/// pointer with an inline VTable header.
-pub struct ThinError {
-    error_ref: unsafe fn(*const ThinError) -> *const (dyn StdError + Send + Sync + 'static),
+struct ThinArcErrorVTable {
+    clone: unsafe fn(*const ThinArcErrorHeader) -> *const ThinArcErrorHeader,
+    drop: unsafe fn(*const ThinArcErrorHeader),
+    error_ref:
+        unsafe fn(*const ThinArcErrorHeader) -> *const (dyn StdError + Send + Sync + 'static),
 }
 
-impl ops::Deref for ThinError {
-    type Target = dyn StdError + Send + Sync + 'static;
+#[repr(transparent)]
+struct ThinArcErrorHeader {
+    vtable: &'static ThinArcErrorVTable,
+}
 
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.as_ref()
+/// Performance is extremely sensitive to the size of `RuntimeError`, so we represent it as a single
+/// pointer with an inline VTable header.
+pub struct ThinArcError(*const ThinArcErrorHeader);
+
+unsafe impl Send for ThinArcError {}
+unsafe impl Sync for ThinArcError {}
+
+impl Clone for ThinArcError {
+    fn clone(&self) -> Self {
+        Self(unsafe { ((*self.0).vtable.clone)(self.0) })
     }
 }
 
-impl AsRef<dyn StdError + Send + Sync + 'static> for ThinError {
+impl Drop for ThinArcError {
+    fn drop(&mut self) {
+        unsafe { ((*self.0).vtable.drop)(self.0) }
+    }
+}
+
+impl ThinArcError {
+    pub fn new<E: StdError + Send + Sync + 'static>(err: E) -> ThinArcError {
+        #[repr(C)]
+        struct HeaderError<E> {
+            header: ThinArcErrorHeader,
+            error: E,
+        }
+
+        // Helper trait to materialize vtables in static memory.
+        trait HasThinArcErrVtable {
+            const VTABLE: ThinArcErrorVTable;
+        }
+
+        impl<'gc, E: StdError + Send + Sync + 'static> HasThinArcErrVtable for E {
+            const VTABLE: ThinArcErrorVTable = ThinArcErrorVTable {
+                clone: |ptr| unsafe {
+                    Arc::increment_strong_count(ptr as *const HeaderError<E>);
+                    ptr
+                },
+                drop: |ptr| unsafe {
+                    let _ = Arc::from_raw(ptr as *const HeaderError<E>);
+                },
+                error_ref: |ptr| unsafe {
+                    let ptr = ptr as *const HeaderError<E>;
+                    &raw const (*ptr).error as *const (dyn StdError + Send + Sync + 'static)
+                },
+            };
+        }
+
+        let vtable: &'static _ = &<E as HasThinArcErrVtable>::VTABLE;
+
+        let he = Arc::new(HeaderError {
+            header: ThinArcErrorHeader { vtable },
+            error: err,
+        });
+
+        ThinArcError(Arc::into_raw(he) as *const ThinArcErrorHeader)
+    }
+
     #[inline]
-    fn as_ref(&self) -> &(dyn StdError + Send + Sync + 'static) {
-        unsafe { &*(self.error_ref)(ptr::from_ref(self)) }
+    pub fn err_ref(&self) -> &'_ (dyn StdError + Send + Sync + 'static) {
+        unsafe { &*((*self.0).vtable.error_ref)(self.0) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{self, AtomicBool};
+
+    use super::*;
+
+    #[test]
+    fn runtime_error() {
+        struct TestErr {
+            dropped: Arc<AtomicBool>,
+        }
+
+        impl fmt::Display for TestErr {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "TestErr")
+            }
+        }
+
+        impl fmt::Debug for TestErr {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self)
+            }
+        }
+
+        impl Drop for TestErr {
+            fn drop(&mut self) {
+                self.dropped.store(true, atomic::Ordering::Release);
+            }
+        }
+
+        impl StdError for TestErr {}
+
+        let dropped = Arc::new(AtomicBool::new(false));
+
+        let rt_err = RuntimeError::new(TestErr {
+            dropped: dropped.clone(),
+        });
+
+        assert_eq!(&format!("{}", rt_err), "TestErr");
+        assert_eq!(&format!("{:?}", rt_err), "TestErr");
+
+        drop(rt_err);
+
+        assert!(dropped.load(atomic::Ordering::Acquire));
     }
 }

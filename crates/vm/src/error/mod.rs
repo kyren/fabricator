@@ -17,7 +17,7 @@ use crate::{
 
 pub use self::{
     raw_gc::RawGc,
-    runtime_error::{RuntimeError, SharedError, ThinError},
+    runtime_error::{RuntimeError, SharedError, ThinArcError},
 };
 
 /// An error raised directly from FML which contains a `Value`.
