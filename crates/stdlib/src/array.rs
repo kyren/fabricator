@@ -6,6 +6,7 @@ use std::{
 
 use fabricator_vm as vm;
 use gc_arena::Gc;
+use rand::RngExt as _;
 
 use crate::util::{MagicExt as _, resolve_array_index, resolve_array_range};
 

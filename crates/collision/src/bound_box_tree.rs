@@ -1,4 +1,5 @@
 use fabricator_math::{Box2, Vec2};
+use rand::RngExt;
 
 /// A 4D k-d tree of 2D bound boxes, allowing for efficient bounds queries.
 ///

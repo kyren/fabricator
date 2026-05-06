@@ -21,7 +21,7 @@ gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "40c2710d381d678e9
 image = { version = "0.25", default-features = false, features = ["png"] }
 log = "0.4"
 num = "0.4"
-rand = "0.9"
+rand = { version = "0.10" }
 rayon = "1.1"
 rustc-hash = "2.0"
 serde = { version = "1.0", features = ["derive"] }
