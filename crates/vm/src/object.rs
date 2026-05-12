@@ -47,6 +47,23 @@ impl<'gc> Object<'gc> {
         Self(Gc::new(mc, Default::default()))
     }
 
+    pub fn from_iter(
+        mc: &Mutation<'gc>,
+        iter: impl Iterator<Item = (String<'gc>, Value<'gc>)>,
+    ) -> Self {
+        Self(Gc::new(
+            mc,
+            RefLock::new(ObjectState {
+                map: iter.collect(),
+                parent: None,
+            }),
+        ))
+    }
+
+    pub fn from_object_state(mc: &Mutation<'gc>, object_state: ObjectState<'gc>) -> Self {
+        Self(Gc::new(mc, RefLock::new(object_state)))
+    }
+
     #[inline]
     pub fn from_inner(inner: Gc<'gc, ObjectInner<'gc>>) -> Self {
         Self(inner)
