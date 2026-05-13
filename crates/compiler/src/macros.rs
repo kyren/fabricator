@@ -32,6 +32,8 @@ pub struct MacroError {
 #[error("macro #{0} depends on itself recursively")]
 pub struct RecursiveMacro(pub usize);
 
+pub type SyntheticMacros<S> = HashMap<S, Vec<Token<S>>>;
+
 #[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
 pub struct Macro<S> {
@@ -434,6 +436,29 @@ impl<S: Clone + Eq + Hash> MacroSet<S> {
                 .filter_map(|(k, v)| Some((k, v.index_for_config(config)?)))
                 .collect(),
         })
+    }
+
+    /// Create an `MacroSet` with externally defined macros from the given [`SyntheticMacros`] set.
+    pub fn with_synthetic(synthetic_macros: SyntheticMacros<S>) -> Self {
+        let mut this = Self::default();
+
+        for (i, (macro_name, tokens)) in synthetic_macros.into_iter().enumerate() {
+            this.macro_dict.insert(
+                macro_name.clone(),
+                ConfigurationSet {
+                    default: Some(i),
+                    for_config: HashMap::new(),
+                },
+            );
+            this.macros.push(Macro {
+                name: macro_name,
+                config: None,
+                span: Span::null(),
+                tokens,
+            })
+        }
+
+        this
     }
 }
 
