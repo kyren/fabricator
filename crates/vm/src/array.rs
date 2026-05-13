@@ -36,6 +36,10 @@ impl<'gc> Array<'gc> {
         Self(Gc::new(mc, RefLock::new(Vec::with_capacity(capacity))))
     }
 
+    pub fn from_vec(mc: &Mutation<'gc>, vec: Vec<Value<'gc>>) -> Self {
+        Self(Gc::new(mc, RefLock::new(vec)))
+    }
+
     pub fn from_iter(mc: &Mutation<'gc>, iter: impl IntoIterator<Item = Value<'gc>>) -> Self {
         Self(Gc::new(mc, RefLock::new(Vec::from_iter(iter))))
     }

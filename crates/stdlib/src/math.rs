@@ -1,7 +1,7 @@
 use std::{cell::RefCell, convert::Infallible, f64};
 
 use fabricator_vm as vm;
-use rand::{Rng as _, SeedableRng, rngs::SmallRng, seq::SliceRandom as _};
+use rand::{RngExt as _, SeedableRng, rngs::SmallRng, seq::SliceRandom as _};
 
 use crate::util::{MagicExt as _, resolve_array_range};
 
@@ -89,13 +89,13 @@ pub fn clamp<'gc>(
 }
 
 pub struct Rng {
-    rng: RefCell<SmallRng>,
+    pub rng: RefCell<SmallRng>,
 }
 
 impl Default for Rng {
     fn default() -> Self {
         Self {
-            rng: RefCell::new(SmallRng::from_os_rng()),
+            rng: RefCell::new(SmallRng::try_from_rng(&mut rand::rngs::SysRng).unwrap()),
         }
     }
 }
