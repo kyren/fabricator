@@ -48,28 +48,26 @@ pub fn json_parse<'gc>(
     json: vm::String<'gc>,
 ) -> Result<vm::Value<'gc>, vm::RuntimeError> {
     let value: serde_json::Value = serde_json::from_str(json.as_str())?;
-    Ok(json_to_value(ctx, value)?)
+    json_to_value(ctx, value)
 }
 
 pub fn value_to_json<'gc>(
     ctx: vm::Context<'gc>,
     recursive_check: &mut HashSet<*const ()>,
     value: vm::Value<'gc>,
-) -> Result<serde_json::Value, vm::RuntimeError> {
-    Ok(match value {
+) -> Result<serde_json::Value, ToJsonErr> {
+    let output = match value {
         vm::Value::Undefined => serde_json::Value::Null,
         vm::Value::Boolean(b) => serde_json::Value::Bool(b),
         vm::Value::Integer(i) => serde_json::Value::Number(i.into()),
         vm::Value::Float(f) => serde_json::Value::Number(
-            serde_json::Number::from_f64(f)
-                .ok_or_else(|| vm::RuntimeError::msg("invalid JSON float value"))?,
+            serde_json::Number::from_f64(f).ok_or(ToJsonErr::InvalidNumericalRepresentation(f))?,
         ),
         vm::Value::String(s) => serde_json::Value::String(s.as_str().to_owned()),
         vm::Value::Object(obj) => {
-            if !recursive_check.insert(Gc::as_ptr(obj.into_inner()) as *const ()) {
-                return Err(vm::RuntimeError::msg(
-                    "cannot convert recursive object to JSON",
-                ))?;
+            let ptr = Gc::as_ptr(obj.into_inner()) as *const ();
+            if !recursive_check.insert(ptr) {
+                return Err(ToJsonErr::Recursive("object"));
             }
 
             let mut map = serde_json::Map::new();
@@ -80,13 +78,14 @@ pub fn value_to_json<'gc>(
                     value_to_json(ctx, recursive_check, value)?,
                 );
             }
+            recursive_check.remove(&ptr);
+
             serde_json::Value::Object(map)
         }
         vm::Value::Array(arr) => {
-            if !recursive_check.insert(Gc::as_ptr(arr.into_inner()) as *const ()) {
-                return Err(vm::RuntimeError::msg(
-                    "cannot convert recursive array to JSON",
-                ))?;
+            let ptr = Gc::as_ptr(arr.into_inner()) as *const ();
+            if !recursive_check.insert(ptr) {
+                return Err(ToJsonErr::Recursive("array"));
             }
 
             let mut array = Vec::new();
@@ -94,6 +93,7 @@ pub fn value_to_json<'gc>(
             for &value in &*borrow {
                 array.push(value_to_json(ctx, recursive_check, value)?);
             }
+            recursive_check.remove(&ptr);
             serde_json::Value::Array(array)
         }
         vm::Value::UserData(ud) => {
@@ -104,21 +104,18 @@ pub fn value_to_json<'gc>(
             } else if let Some(f) = ud.coerce_float(ctx) {
                 serde_json::Value::Number(
                     serde_json::Number::from_f64(f)
-                        .ok_or_else(|| vm::RuntimeError::msg("invalid JSON float value"))?,
+                        .ok_or(ToJsonErr::InvalidNumericalRepresentation(f))?,
                 )
             } else {
-                return Err(vm::RuntimeError::msg(format!(
-                    "cannot convert userdata to JSON"
-                )));
+                return Err(ToJsonErr::InvalidConversion("userdata"));
             }
         }
         vm::Value::Closure(_) | vm::Value::Callback(_) => {
-            return Err(vm::RuntimeError::msg(format!(
-                "cannot convert {} to JSON",
-                value.type_name()
-            )));
+            return Err(ToJsonErr::InvalidConversion(value.type_name()));
         }
-    })
+    };
+
+    Ok(output)
 }
 
 pub fn json_stringify<'gc>(
@@ -127,6 +124,19 @@ pub fn json_stringify<'gc>(
 ) -> Result<String, vm::RuntimeError> {
     let json = value_to_json(ctx, &mut HashSet::new(), value)?;
     Ok(serde_json::to_string(&json)?)
+}
+
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum ToJsonErr {
+    #[error("cannot convert recursive {0} to JSON")]
+    Recursive(&'static str),
+
+    #[error("cannot convert {0} to JSON")]
+    InvalidConversion(&'static str),
+
+    // this basically is `infinity` or `NaN`, which JSON disallows
+    #[error("invalid JSON number {0}")]
+    InvalidNumericalRepresentation(f64),
 }
 
 pub fn json_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
