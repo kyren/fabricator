@@ -1,0 +1,11 @@
+var res;
+assert(pcall(function(a, b, c) {
+    res = a + b + c;
+}, 1, 2, 3) == true);
+assert(res == 6);
+
+assert(pcall(function(a, b) {
+    return a + b;
+}, "a", {}) == false);
+
+return true;
