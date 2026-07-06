@@ -78,7 +78,7 @@ fn run_tests(dir: &str) -> bool {
                     if ext.eq_ignore_ascii_case("gml") {
                         compiler::CompileSettings::compat()
                     } else {
-                        compiler::CompileSettings::modern()
+                        compiler::CompileSettings::strict()
                     },
                 ) {
                     Ok(ret_true) => {

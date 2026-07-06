@@ -1,7 +1,7 @@
 use std::{collections::hash_map, hash::Hash};
 
 use fabricator_vm::{BuiltIns, FunctionRef, SharedStr, Span};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{ast, constant::Constant, ir, string_interner::StringInterner};
@@ -21,11 +21,11 @@ pub enum FreeVarMode {
 }
 
 pub trait VarDict<S> {
-    /// Should return true if ir-gen should permit this name for a variable or parameter
+    /// Should return false if ir-gen should permit this name for a variable or parameter
     /// declaration.
     ///
     /// Return false for names which have other meanings which should not be allowed to be shadowed.
-    fn permit_declaration(&self, name: &S) -> bool;
+    fn is_reserved(&self, name: &S) -> bool;
 
     /// Return the type of free variable for the given identifier.
     fn free_var_mode(&self, ident: &S) -> FreeVarMode;
@@ -35,28 +35,38 @@ pub trait VarDict<S> {
 pub enum IrGenErrorKind {
     #[error("export statements are only allowed at the top-level")]
     MisplacedExport,
+    #[error("function scope variable declaration not permitted")]
+    FunctionScopeVarNotAllowed,
+    #[error("non-closure-functions are not permitted")]
+    NonClosureFunctionsNotAllowed,
     #[error("constructor functions are not permitted")]
     ConstructorsNotAllowed,
     #[error("try / catch blocks are not permitted")]
     TryCatchNotAllowed,
-    #[error("declaration with the given name is not permitted")]
-    DeclarationNotPermitted,
+    #[error("free variables as implicit self are not permitted")]
+    ImplicitSelfNotAllowed,
+    #[error("function-scope variables are not permitted to shadow block-scope variables")]
+    FunctionScopeCannotShadowBlockScope,
+    #[error(
+        "function-scope variable is re-declared with a different kind or has a kind which cannot be re-declared"
+    )]
+    BadFunctionScopeVarRedeclaration,
+    #[error("variable declaration uses a reserved name")]
+    DeclaredNameIsReserved,
     #[error("assignment to read-only magic value")]
     ReadOnlyMagic,
     #[error("static variables in constructors must be at the top-level of the function block")]
     ConstructorStaticNotTopLevel,
     #[error("static variables in constructors must be initialized")]
     ConstructorStaticNotInitialized,
-    #[error("static variable in constructor does not have a unique name")]
-    ConstructorStaticNotUnique,
-    #[error("block scoping is disabled and a variable is redeclared with an incompatible kind")]
-    BadVariableRedeclaration,
     #[error("function not allowed to have a return statement with an argument")]
     CannotReturnValue,
     #[error("break statement with no target")]
     BreakWithNoTarget,
     #[error("continue statement with no target")]
     ContinueWithNoTarget,
+    #[error("unsupported feature: {0}")]
+    UnsupportedFeature(&'static str),
 }
 
 #[derive(Debug, Error)]
@@ -69,30 +79,36 @@ pub struct IrGenError {
 
 #[derive(Debug, Copy, Clone)]
 pub struct IrGenSettings {
-    /// Use proper block scoping for variable declarations.
-    ///
-    /// if `false`, then all variable declarations will be visible until the end of the enclosing
-    /// function even when the enclosing scope ends.
-    pub block_scoping: bool,
-
-    /// Allow lambda expressions to reference variables from outer functions.
-    ///
-    /// Without this, such variables will instead be interpreted as implicit `this` variables.
+    /// Allow `var` and `static` variable declarations, which do not use function scoping.
     ///
     /// # Block scoping and closures
     ///
     /// Closing over a variable which is declared in the body of a loop will act differently
-    /// depending on whether `block_scoping` is enabled or not. With `block_scoping`, each variable
-    /// in a loop iteration is independent, without it, every variable in the body of a loop is
-    /// always the same instance. The first behavior is similar to ECMAScript closures with the
-    /// `let` keyword, the second behavior is similar to ECMAScript closures with the `var` keyword.
+    /// depending on whether it is declared using block scoping or function scoping. With block
+    /// scoping, each variable in a loop iteration is independent, without it, every variable in
+    /// the body of a loop is always the same instance. This matches the behavior of ECMAScript
+    /// variables declared with `let` vs `var`.
     ///
     /// <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Closures#creating_closures_in_loops_a_common_mistake>
-    pub closures: bool,
+    pub allow_function_scope_vars: bool,
+
+    /// Allow `function` style function expressions and function statements.
+    ///
+    /// Function statements both create a named variable *and* magically insert a named value into
+    /// `self`, which is confusing.
+    ///
+    /// Function style expressions do not close over surrounding variables and automatically bind
+    /// their surrounding `self` value, which is also confusing.
+    ///
+    /// Both of these can be accomplished with `closure`, which has neither of these behaviors and
+    /// is much easier to reason about.
+    ///
+    /// This rule does not affect top-level function export statements, which are always allowed.
+    pub allow_non_closure_functions: bool,
 
     /// Allow `constructor` annotated function statements with optional inheritance.
     ///
-    /// These desugar to the equivalent manual implementation creating a new `this` object and a
+    /// These desugar to the equivalent manual implementation creating a new `self` object and a
     /// static variable holding the shared super object.
     ///
     /// All `static` variables must be declared at the top level of the function with unique names,
@@ -111,27 +127,31 @@ pub struct IrGenSettings {
     /// These desugar to the equivalent of creating an inner closure and calling it with `pcall`.
     /// Inside the `try` block, the difference between a normal exit, a thrown error, and `break` /
     /// `continue` / `return` are handled by setting a flag which is checked at `pcall` exit.
-    ///
-    ///
     pub allow_try_catch_blocks: bool,
+
+    /// Allow free variables, if they are not imports from somewhere else, to implicitly refer to
+    /// `self.{var}`.
+    pub allow_implicit_self: bool,
 }
 
 impl IrGenSettings {
-    pub fn modern() -> Self {
+    pub fn strict() -> Self {
         IrGenSettings {
-            block_scoping: true,
-            closures: true,
+            allow_function_scope_vars: false,
+            allow_non_closure_functions: false,
             allow_constructors: false,
             allow_try_catch_blocks: false,
+            allow_implicit_self: false,
         }
     }
 
     pub fn compat() -> Self {
         IrGenSettings {
-            block_scoping: false,
-            closures: false,
+            allow_function_scope_vars: true,
+            allow_non_closure_functions: true,
             allow_constructors: true,
             allow_try_catch_blocks: true,
+            allow_implicit_self: true,
         }
     }
 
@@ -180,17 +200,6 @@ impl IrGenSettings {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum ClosureBindMode {
-    /// Closures bind the ambient `this` and `other`.
-    BindDefault,
-    /// For any created closures, open a temporary "this" scope to bind the given `this` object for
-    /// that constructor only. This is used inside struct literals.
-    BindNewThis(ir::InstId),
-    /// Make all closures unbound. This is the default in static initializers.
-    BindNothing,
-}
-
 struct FunctionCompiler<'a, S> {
     settings: IrGenSettings,
     interner: &'a mut dyn StringInterner<String = S>,
@@ -200,21 +209,36 @@ struct FunctionCompiler<'a, S> {
 
     func_type: FunctionType,
 
-    // This will be `Some` if the current block is unfinished and can be appended to.
+    /// This will be `Some` if the current block is unfinished and can be appended to.
     current_block: Option<ir::BlockId>,
 
     break_target_stack: Vec<NonLocalJump>,
     continue_target_stack: Vec<NonLocalJump>,
-    closure_bind_mode: Vec<ClosureBindMode>,
+    function_bind_mode: Vec<FunctionBindMode>,
 
-    scopes: Vec<Scope<S>>,
+    /// Function-scope variable declarations.
+    function_scope_vars: FxHashMap<ast::Ident<S>, VariableType<S>>,
 
-    // Maps in-scope variable names to a list of scope indexes for scopes which contain variables
-    // with this name.
-    //
-    // This list is always kept in scope stack order, so the top entry in the list is always the
-    // variable currently visible for this name.
-    var_lookup: FxHashMap<ast::Ident<S>, Vec<usize>>,
+    /// Block scopes containing block variable declarations.
+    block_scopes: Vec<BlockScope<S>>,
+
+    /// Maps in-scope block-scope variable names to a list of indexes for block scopes which contain
+    /// variables with this name.
+    ///
+    /// This list is always kept in block scope stack order, so the top entry in the list is always
+    /// the variable currently visible for this name.
+    block_variable_lookup: FxHashMap<ast::Ident<S>, Vec<usize>>,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum FunctionBindMode {
+    /// Functions bind the ambient `self` and `other`.
+    BindDefault,
+    /// For any created functions, open a temporary "this" scope to bind the given `self` object for
+    /// that constructor only. This is used inside struct literals.
+    BindNewThis(ir::InstId),
+    /// Make all functions unbound. This is the default in static initializers.
+    BindNothing,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -231,7 +255,7 @@ enum TryCatchExitCode {
 enum FunctionType {
     /// The function is a normal function.
     Normal,
-    /// All function returns, including the end of the function, implicitly return the `this` value.
+    /// All function returns, including the end of the function, implicitly return the `self` value.
     /// No function return may return an explicit value.
     Constructor {
         this: ir::InstId,
@@ -258,8 +282,14 @@ enum FunctionType {
     },
 }
 
+/// Requested declaration type for a function-scope variable.
+///
+/// Function-scope variables can be:
+///   1) Function Parameters
+///   2) Variables declared with `var` or `static`.
+///   3) Closed over variables of any type from upper functions.
 #[derive(Debug, Clone)]
-enum VarType<S> {
+enum FunctionVarDecl<S> {
     /// This variable is a normal IR variable.
     Normal(ir::Variable<S>),
     /// This variable is a constructor static and is inside the `parent` object of a constructor
@@ -269,30 +299,65 @@ enum VarType<S> {
     UpperConstructorStatic { parent: ir::VarId, field: S },
 }
 
-impl<S> From<ir::Variable<S>> for VarType<S> {
-    fn from(var: ir::Variable<S>) -> Self {
-        VarType::Normal(var)
+impl<S> From<ir::Variable<S>> for FunctionVarDecl<S> {
+    fn from(value: ir::Variable<S>) -> Self {
+        Self::Normal(value)
+    }
+}
+
+/// Declared variables can be normal IR variables or have special access modes.
+#[derive(Debug, Clone)]
+enum VariableType<S> {
+    /// This is a normal IR variable.
+    Normal(ir::VarId),
+    /// This variable is an owned constructor static.
+    ConstructorStatic(S),
+    /// This variable references a captured constructor static in a closure.
+    UpperConstructorStatic { parent: ir::VarId, field: S },
+}
+
+impl<S> From<ir::VarId> for VariableType<S> {
+    fn from(var_id: ir::VarId) -> Self {
+        VariableType::Normal(var_id)
     }
 }
 
 #[derive(Debug, Clone)]
-enum VarDecl<S> {
-    Normal(ir::VarId),
-    ConstructorStatic(S),
-    /// This variable references a captures constructor static in a closure.
-    UpperConstructorStatic {
-        parent: ir::VarId,
-        field: S,
+enum FoundVariable<S> {
+    /// This is a normal variable owned by this function.
+    Owned {
+        var_id: ir::VarId,
+        is_static: bool,
+        has_block_scope: bool,
     },
+    /// This variable references a captured variable in a closure.
+    Upper(ir::VarId),
+    /// This variable is an owned constructor static.
+    ConstructorStatic(S),
+    /// This variable references a captured constructor static in a closure.
+    UpperConstructorStatic { parent: ir::VarId, field: S },
 }
 
-struct Scope<S> {
-    // Variables to close when this scope ends. May include shadowed variables.
+impl<S> Into<VariableType<S>> for FoundVariable<S> {
+    fn into(self) -> VariableType<S> {
+        match self {
+            FoundVariable::Owned { var_id, .. } => VariableType::Normal(var_id),
+            FoundVariable::Upper(var_id) => VariableType::Normal(var_id),
+            FoundVariable::ConstructorStatic(field) => VariableType::ConstructorStatic(field),
+            FoundVariable::UpperConstructorStatic { parent, field } => {
+                VariableType::UpperConstructorStatic { parent, field }
+            }
+        }
+    }
+}
+
+struct BlockScope<S> {
+    /// All variables to close when this block ends.
     to_close: Vec<ir::VarId>,
 
-    // All variable declarations for this scope which have not been shadowed. When a new declaration
-    // shadows another, the new declaration will replace the old in this map.
-    visible: FxHashMap<ast::Ident<S>, VarDecl<S>>,
+    /// All variable declarations for this scope which have not been shadowed. When a new
+    /// declaration shadows another, the new declaration will replace the old in this map.
+    visible: FxHashMap<ast::Ident<S>, ir::VarId>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -303,7 +368,7 @@ struct NonLocalJump {
     pop_vars_to: usize,
 }
 
-impl<S> Default for Scope<S> {
+impl<S> Default for BlockScope<S> {
     fn default() -> Self {
         Self {
             to_close: Vec::new(),
@@ -314,7 +379,7 @@ impl<S> Default for Scope<S> {
 
 #[derive(Debug, Clone)]
 enum MutableTarget<S> {
-    Var(VarDecl<S>),
+    Var(VariableType<S>),
     This {
         key: ir::InstId,
     },
@@ -352,7 +417,7 @@ where
 
         // We leave the start block completely empty except for a jump to the "real" start block.
         //
-        // This is so that we can use the start block as a place to put non-block-scoped variable
+        // This is so that we can use the start block as a place to put function-scope variable
         // declaration instructions that need to be before any other generated IR, and avoid being
         // O(n^2) in the number of variable declarations.
         let start_block = blocks.insert(ir::Block::default());
@@ -384,10 +449,10 @@ where
             current_block: Some(first_block),
             continue_target_stack: Vec::new(),
             break_target_stack: Vec::new(),
-            closure_bind_mode: Vec::new(),
-            // Even with no block scoping, all functions must have one top-level scope.
-            scopes: vec![Scope::default()],
-            var_lookup: FxHashMap::default(),
+            function_bind_mode: Vec::new(),
+            function_scope_vars: FxHashMap::default(),
+            block_scopes: Vec::new(),
+            block_variable_lookup: FxHashMap::default(),
         }
     }
 
@@ -395,7 +460,8 @@ where
         self.function.num_parameters = parameters.len();
 
         for (param_index, param) in parameters.iter().enumerate() {
-            let arg_var = self.declare_var(param.name.clone(), ir::Variable::Owned.into())?;
+            let arg_var =
+                self.declare_function_var(param.name.clone(), ir::Variable::Heap.into())?;
 
             let mut value =
                 self.push_instruction(param.span, ir::InstructionKind::FixedArgument(param_index));
@@ -417,7 +483,7 @@ where
                 )?;
             };
 
-            self.set_var(param.name.span, arg_var, value);
+            self.set_var(param.name.span, arg_var.into(), value);
         }
 
         Ok(())
@@ -474,7 +540,7 @@ where
             ir::InstructionKind::CloseCall(call_scope),
         );
 
-        let our_super_var = self.function.variables.insert(ir::Variable::Owned);
+        let our_super_var = self.function.variables.insert(ir::Variable::Heap);
         self.push_instruction(
             body.span.start_span(),
             ir::InstructionKind::OpenVariable(our_super_var),
@@ -624,21 +690,12 @@ where
         );
 
         // All function expressions within static initializers are *unbound*.
-        self.push_closure_bind_mode(ClosureBindMode::BindNothing);
-
-        let mut static_names = FxHashSet::default();
+        self.push_function_bind_mode(FunctionBindMode::BindNothing);
 
         for stmt in &body.statements {
             match stmt {
                 ast::Statement::Static(decls) => {
                     for (decl_name, decl_value) in &decls.vars {
-                        if !static_names.insert(decl_name) {
-                            return Err(IrGenError {
-                                kind: IrGenErrorKind::ConstructorStaticNotUnique,
-                                span: decls.span,
-                            });
-                        }
-
                         let key = self.push_instruction(
                             decls.span,
                             ir::InstructionKind::Constant(Constant::String(
@@ -659,9 +716,9 @@ where
                             },
                         );
 
-                        self.declare_var(
+                        self.declare_function_var(
                             decl_name.clone(),
-                            VarType::ConstructorStatic(decl_name.inner.clone()),
+                            FunctionVarDecl::ConstructorStatic(decl_name.inner.clone()),
                         )?;
                     }
                 }
@@ -669,7 +726,7 @@ where
             }
         }
 
-        self.pop_closure_bind_mode(ClosureBindMode::BindNothing);
+        self.pop_closure_bind_mode(FunctionBindMode::BindNothing);
 
         self.push_instruction(
             body.span.start_span(),
@@ -754,6 +811,13 @@ where
                 span: enum_stmt.span,
             }),
             ast::Statement::Function(func_stmt) => {
+                if !self.settings.allow_non_closure_functions {
+                    return Err(IrGenError {
+                        kind: IrGenErrorKind::NonClosureFunctionsNotAllowed,
+                        span: func_stmt.span,
+                    });
+                }
+
                 let allow_constructors = self.settings.allow_constructors;
                 let mut compiler = self.start_inner_function(
                     FunctionRef::Named(SharedStr::new(func_stmt.name.as_ref()), func_stmt.span),
@@ -775,13 +839,14 @@ where
                 };
 
                 let func_id = self.function.functions.insert(function);
-                let func = self.new_closure(func_stmt.span, func_id);
+                let func = self.new_bound_function(func_stmt.span, func_id);
 
-                // Function statements in GML both create a scoped variable *and* insert a named
-                // value into `this`.
+                // Function statements in GML both create a function-scope variable *and* insert a
+                // named value into `self`.
 
-                let var = self.declare_var(func_stmt.name.clone(), ir::Variable::Owned.into())?;
-                self.set_var(func_stmt.span, var, func);
+                let var =
+                    self.declare_function_var(func_stmt.name.clone(), ir::Variable::Heap.into())?;
+                self.set_var(func_stmt.span, var.into(), func);
 
                 let this = self.push_instruction(func_stmt.span, ir::InstructionKind::This);
                 let key = self.push_instruction(
@@ -798,9 +863,43 @@ where
                 );
                 Ok(())
             }
+            ast::Statement::Closure(closure_stmt) => {
+                let mut compiler = self.start_inner_function(
+                    FunctionRef::Named(
+                        SharedStr::new(closure_stmt.name.as_ref()),
+                        closure_stmt.span,
+                    ),
+                    true,
+                );
+
+                compiler.declare_parameters(&closure_stmt.parameters)?;
+                compiler.block(&closure_stmt.body)?;
+                let function = compiler.finish();
+
+                let func_id = self.function.functions.insert(function);
+                let func = self.push_instruction(
+                    closure_stmt.span,
+                    ir::InstructionKind::Closure {
+                        func: func_id,
+                        bind_this: false,
+                    },
+                );
+
+                let var = self
+                    .declare_function_var(closure_stmt.name.clone(), ir::Variable::Heap.into())?;
+                self.set_var(closure_stmt.span, var.into(), func);
+                Ok(())
+            }
             ast::Statement::Var(var_decls) => {
+                if !self.settings.allow_function_scope_vars {
+                    return Err(IrGenError {
+                        kind: IrGenErrorKind::FunctionScopeVarNotAllowed,
+                        span: var_decls.span,
+                    });
+                }
+
                 for (name, value) in &var_decls.vars {
-                    self.var_decl(var_decls.span, name, value.as_ref())?;
+                    self.var_decl(name, value.as_ref())?;
                 }
                 Ok(())
             }
@@ -810,6 +909,11 @@ where
                         kind: IrGenErrorKind::ConstructorStaticNotTopLevel,
                         span: static_decls.span,
                     });
+                } else if !self.settings.allow_function_scope_vars {
+                    return Err(IrGenError {
+                        kind: IrGenErrorKind::FunctionScopeVarNotAllowed,
+                        span: static_decls.span,
+                    });
                 }
 
                 for (name, value) in &static_decls.vars {
@@ -817,6 +921,8 @@ where
                 }
                 Ok(())
             }
+            ast::Statement::Let(let_decls) => self.let_decl(let_decls),
+            ast::Statement::StaticLet(let_decls) => self.static_let_decl(let_decls),
             ast::Statement::GlobalVar(ident) => Err(IrGenError {
                 kind: IrGenErrorKind::MisplacedExport,
                 span: ident.span,
@@ -825,10 +931,16 @@ where
                 self.assignment_stmt(assignment_statement)
             }
             ast::Statement::Return(return_stmt) => {
-                let value = if let Some(value) = &return_stmt.value {
-                    Some(self.expression(value)?)
-                } else {
+                let value = if return_stmt.values.is_empty() {
                     None
+                } else {
+                    if return_stmt.values.len() != 1 {
+                        return Err(IrGenError {
+                            kind: IrGenErrorKind::UnsupportedFeature("multiple return values"),
+                            span: return_stmt.span,
+                        });
+                    }
+                    Some(self.expression(&return_stmt.values[0])?)
                 };
                 self.do_return(return_stmt.span, value)
             }
@@ -845,7 +957,12 @@ where
                 Ok(())
             }
             ast::Statement::Call(function_call) => {
-                let _ = self.call_expr(function_call)?;
+                let call_scope = self.open_call(function_call)?;
+                self.push_instruction(
+                    function_call.span,
+                    ir::InstructionKind::CloseCall(call_scope),
+                );
+
                 Ok(())
             }
             ast::Statement::Prefix(mutation) => {
@@ -856,6 +973,7 @@ where
                 self.mutation_op(mutation)?;
                 Ok(())
             }
+            ast::Statement::Exit(span) => self.do_return(*span, None),
             ast::Statement::Break(span) => self.do_break(*span),
             ast::Statement::Continue(span) => self.do_continue(*span),
         }
@@ -863,14 +981,15 @@ where
 
     fn var_decl(
         &mut self,
-        span: Span,
         name: &ast::Ident<S>,
         value: Option<&ast::Expression<S>>,
     ) -> Result<(), IrGenError> {
-        let value = value.map(|value| self.expression(value)).transpose()?;
-        let var = self.declare_var(name.clone(), ir::Variable::Owned.into())?;
-        if let Some(inst_id) = value {
-            self.set_var(span, var, inst_id);
+        let value = value
+            .map(|value| Ok((self.expression(value)?, value.span())))
+            .transpose()?;
+        let var = self.declare_function_var(name.clone(), ir::Variable::Heap.into())?;
+        if let Some((inst_id, span)) = value {
+            self.set_var(span, var.into(), inst_id);
         }
         Ok(())
     }
@@ -885,7 +1004,7 @@ where
             if let Some(constant) = value.clone().fold_constant() {
                 // If our static is a constant, then we can just initialize it when the prototype is
                 // created.
-                self.declare_var(name.clone(), ir::Variable::Static(constant).into())?;
+                self.declare_function_var(name.clone(), ir::Variable::Static(constant).into())?;
             } else {
                 // Otherwise, we need to initialize two static variables, a hidden one for the
                 // initialization state and a visible one to hold the initialized value.
@@ -896,7 +1015,7 @@ where
                     .variables
                     .insert(ir::Variable::Static(Constant::Boolean(false)));
                 // Create a normal static variable that holds the real value.
-                let var = self.declare_var(
+                let var = self.declare_function_var(
                     name.clone(),
                     ir::Variable::Static(Constant::Undefined).into(),
                 )?;
@@ -918,7 +1037,8 @@ where
                 self.start_new_block(init_block);
 
                 let value = self.expression(value)?;
-                self.set_var(span, var, value);
+                self.set_var(span, var.into(), value);
+
                 let true_ = self
                     .push_instruction(span, ir::InstructionKind::Constant(Constant::Boolean(true)));
                 self.push_instruction(
@@ -932,10 +1052,179 @@ where
             }
         } else {
             // If our static has no value then it is just initialized as `Undefined`.
-            self.declare_var(
+            self.declare_function_var(
                 name.clone(),
                 ir::Variable::Static(Constant::Undefined).into(),
             )?;
+        }
+
+        Ok(())
+    }
+
+    fn let_decl(&mut self, let_decl_stmt: &ast::LetDeclarationStmt<S>) -> Result<(), IrGenError> {
+        // Declare all `let` variables, with special behavior for the final expression. If the final
+        // expression is an expression with multiple return values, then set the remaining variables
+        // to the corresponding return of the final evaluated expression.
+
+        let mut let_vars = Vec::new();
+
+        for vname in &let_decl_stmt.vars {
+            let_vars.push((
+                vname,
+                self.open_owned_block_var(vname.span, ir::Variable::Heap),
+            ));
+        }
+
+        for i in 0..let_decl_stmt.exprs.len() {
+            match &let_decl_stmt.exprs[i] {
+                ast::Expression::Call(call) if i + 1 == let_decl_stmt.exprs.len() => {
+                    let call_scope = self.open_call(call)?;
+                    for j in i..let_vars.len() {
+                        let (ident, var_id) = let_vars[j];
+                        let value = self.push_instruction(
+                            call.span,
+                            ir::InstructionKind::FixedReturn(call_scope, j - i),
+                        );
+                        self.push_instruction(
+                            ident.span,
+                            ir::InstructionKind::SetVariable(var_id, value),
+                        );
+                    }
+                    self.push_instruction(call.span, ir::InstructionKind::CloseCall(call_scope));
+                }
+                expr => {
+                    let value = self.expression(expr)?;
+                    if let Some((ident, var_id)) = let_vars.get(i).copied() {
+                        self.push_instruction(
+                            ident.span,
+                            ir::InstructionKind::SetVariable(var_id, value),
+                        );
+                    }
+                }
+            }
+        }
+
+        for (vname, var_id) in let_vars {
+            self.declare_block_var(vname.clone(), var_id)?;
+        }
+
+        Ok(())
+    }
+
+    fn static_let_decl(
+        &mut self,
+        let_decl_stmt: &ast::LetDeclarationStmt<S>,
+    ) -> Result<(), IrGenError> {
+        let mut const_values = let_decl_stmt
+            .exprs
+            .iter()
+            .map(|e| e.fold_constant())
+            .collect::<Vec<_>>();
+
+        if const_values.iter().all(|c| c.is_some()) {
+            // If all of our static values are constant, we can just initialize all of them when the
+            // prototype is created.
+
+            for (i, vname) in let_decl_stmt.vars.iter().enumerate() {
+                let var_id = self.open_owned_block_var(
+                    vname.span,
+                    ir::Variable::Static(const_values[i].take().unwrap()),
+                );
+                self.declare_block_var(vname.clone(), var_id)?;
+            }
+        } else {
+            // Otherwise, we need to initialize an extra hidden static variable for the
+            // initialization state. Since `let` variables are not in scope with each other in the
+            // same declaration, we can use a single initialization variable for everything.
+
+            // Create a hidden static variable to hold the initialization state.
+            let is_initialized = self
+                .function
+                .variables
+                .insert(ir::Variable::Static(Constant::Boolean(false)));
+
+            let init_block = self.new_block();
+            let successor = self.new_block();
+
+            let check_initialized = self.push_instruction(
+                let_decl_stmt.span,
+                ir::InstructionKind::GetVariable(is_initialized),
+            );
+            self.end_current_block(
+                let_decl_stmt.span,
+                ir::ExitKind::Branch {
+                    cond: ir::BranchCondition::IsTrue(check_initialized),
+                    if_true: successor,
+                    if_false: init_block,
+                },
+            );
+
+            self.start_new_block(init_block);
+
+            // Declare all `let` variables, with special behavior for the final expression. If the
+            // final expression is an expression with multiple return values, then set the remaining
+            // variables to the corresponding return of the final evaluated expression.
+
+            let mut let_vars = Vec::new();
+
+            for vname in &let_decl_stmt.vars {
+                let_vars.push((
+                    vname,
+                    self.open_owned_block_var(
+                        vname.span,
+                        ir::Variable::Static(Constant::Undefined),
+                    ),
+                ));
+            }
+
+            for i in 0..let_decl_stmt.exprs.len() {
+                match &let_decl_stmt.exprs[i] {
+                    ast::Expression::Call(call) if i + 1 == let_decl_stmt.exprs.len() => {
+                        let call_scope = self.open_call(call)?;
+                        for j in i..let_vars.len() {
+                            let (ident, var_id) = let_vars[j];
+                            let value = self.push_instruction(
+                                call.span,
+                                ir::InstructionKind::FixedReturn(call_scope, j - i),
+                            );
+                            self.push_instruction(
+                                ident.span,
+                                ir::InstructionKind::SetVariable(var_id, value),
+                            );
+                        }
+                        self.push_instruction(
+                            call.span,
+                            ir::InstructionKind::CloseCall(call_scope),
+                        );
+                    }
+                    expr => {
+                        let value = self.expression(expr)?;
+                        if let Some((ident, var_id)) = let_vars.get(i).copied() {
+                            self.push_instruction(
+                                ident.span,
+                                ir::InstructionKind::SetVariable(var_id, value),
+                            );
+                        }
+                    }
+                }
+            }
+
+            for (vname, var_id) in let_vars {
+                self.declare_block_var(vname.clone(), var_id)?;
+            }
+
+            let true_ = self.push_instruction(
+                let_decl_stmt.span,
+                ir::InstructionKind::Constant(Constant::Boolean(true)),
+            );
+            self.push_instruction(
+                let_decl_stmt.span,
+                ir::InstructionKind::SetVariable(is_initialized, true_),
+            );
+
+            self.end_current_block(let_decl_stmt.span, ir::ExitKind::Jump(successor));
+
+            self.start_new_block(successor);
         }
 
         Ok(())
@@ -1098,9 +1387,6 @@ where
         let iter_block = self.new_block();
         let successor_block = self.new_block();
 
-        self.push_break_target(successor_block);
-        self.push_continue_target(iter_block);
-
         self.end_current_block(
             for_statement.span.start_span(),
             ir::ExitKind::Jump(cond_block),
@@ -1117,10 +1403,16 @@ where
             },
         );
 
+        self.push_break_target(successor_block);
+        self.push_continue_target(iter_block);
+
         self.start_new_block(body_block);
         self.push_scope();
         self.statement(&for_statement.body)?;
         self.pop_scope();
+
+        self.pop_continue_target(iter_block);
+        self.pop_break_target(successor_block);
 
         self.end_current_block(
             for_statement.body.span().end_span(),
@@ -1139,9 +1431,6 @@ where
 
         self.start_new_block(successor_block);
 
-        self.pop_continue_target(iter_block);
-        self.pop_break_target(successor_block);
-
         self.pop_scope();
 
         Ok(())
@@ -1151,9 +1440,6 @@ where
         let cond_block = self.new_block();
         let body_block = self.new_block();
         let successor_block = self.new_block();
-
-        self.push_break_target(successor_block);
-        self.push_continue_target(cond_block);
 
         self.end_current_block(while_stmt.span.start_span(), ir::ExitKind::Jump(cond_block));
         self.start_new_block(cond_block);
@@ -1168,10 +1454,16 @@ where
             },
         );
 
+        self.push_break_target(successor_block);
+        self.push_continue_target(cond_block);
+
         self.start_new_block(body_block);
         self.push_scope();
         self.statement(&while_stmt.body)?;
         self.pop_scope();
+
+        self.pop_continue_target(cond_block);
+        self.pop_break_target(successor_block);
 
         self.end_current_block(
             while_stmt.body.span().end_span(),
@@ -1180,16 +1472,13 @@ where
 
         self.start_new_block(successor_block);
 
-        self.pop_continue_target(cond_block);
-        self.pop_break_target(successor_block);
-
         Ok(())
     }
 
     fn repeat_stmt(&mut self, repeat_stmt: &ast::LoopStmt<S>) -> Result<(), IrGenError> {
         let times = self.expression(&repeat_stmt.target)?;
 
-        let dec_var = self.function.variables.insert(ir::Variable::Owned);
+        let dec_var = self.function.variables.insert(ir::Variable::Heap);
         self.push_instruction(repeat_stmt.span, ir::InstructionKind::OpenVariable(dec_var));
         self.push_instruction(
             repeat_stmt.span,
@@ -1199,9 +1488,6 @@ where
         let cond_block = self.new_block();
         let body_block = self.new_block();
         let successor_block = self.new_block();
-
-        self.push_break_target(successor_block);
-        self.push_continue_target(cond_block);
 
         self.end_current_block(
             repeat_stmt.span.start_span(),
@@ -1234,9 +1520,15 @@ where
             ir::InstructionKind::SetVariable(dec_var, dec),
         );
 
+        self.push_break_target(successor_block);
+        self.push_continue_target(cond_block);
+
         self.push_scope();
         self.statement(&repeat_stmt.body)?;
         self.pop_scope();
+
+        self.pop_continue_target(cond_block);
+        self.pop_break_target(successor_block);
 
         self.end_current_block(
             repeat_stmt.body.span().end_span(),
@@ -1244,9 +1536,6 @@ where
         );
 
         self.start_new_block(successor_block);
-
-        self.pop_continue_target(cond_block);
-        self.pop_break_target(successor_block);
 
         self.push_instruction(
             repeat_stmt.span,
@@ -1259,11 +1548,11 @@ where
     fn switch_stmt(&mut self, switch_stmt: &ast::SwitchStmt<S>) -> Result<(), IrGenError> {
         let target = self.expression(&switch_stmt.target)?;
 
-        let successor_block = self.new_block();
-        self.push_break_target(successor_block);
-
         let mut body_blocks = Vec::new();
         body_blocks.resize_with(switch_stmt.cases.len(), || self.new_block());
+
+        let successor_block = self.new_block();
+        self.push_break_target(successor_block);
 
         for (i, case) in switch_stmt.cases.iter().enumerate() {
             let compare = self.expression(&case.compare)?;
@@ -1302,13 +1591,14 @@ where
             self.block(default)?;
         }
 
+        self.pop_break_target(successor_block);
+
         self.end_current_block(
             switch_stmt.span.end_span(),
             ir::ExitKind::Jump(successor_block),
         );
 
         self.start_new_block(successor_block);
-        self.pop_break_target(successor_block);
 
         Ok(())
     }
@@ -1316,7 +1606,7 @@ where
     fn with_stmt(&mut self, with_stmt: &ast::LoopStmt<S>) -> Result<(), IrGenError> {
         let target = self.expression(&with_stmt.target)?;
 
-        let control_var = self.function.variables.insert(ir::Variable::Owned);
+        let control_var = self.function.variables.insert(ir::Variable::Heap);
         self.push_instruction(
             with_stmt.span,
             ir::InstructionKind::OpenVariable(control_var),
@@ -1385,9 +1675,6 @@ where
         let body_block = self.new_block();
         let successor_block = self.new_block();
 
-        self.push_continue_target(check_block);
-        self.push_break_target(successor_block);
-
         self.end_current_block(
             with_stmt.body.span().start_span(),
             ir::ExitKind::Jump(check_block),
@@ -1444,16 +1731,19 @@ where
             ir::InstructionKind::SetThis(this_scope, iter_val),
         );
 
+        self.push_continue_target(check_block);
+        self.push_break_target(successor_block);
+
         self.push_scope();
         self.statement(&with_stmt.body)?;
         self.pop_scope();
 
+        self.pop_break_target(successor_block);
+        self.pop_continue_target(check_block);
+
         self.end_current_block(with_stmt.span.end_span(), ir::ExitKind::Jump(check_block));
 
         self.start_new_block(successor_block);
-
-        self.pop_break_target(successor_block);
-        self.pop_continue_target(check_block);
 
         self.push_instruction(
             with_stmt.span,
@@ -1485,7 +1775,7 @@ where
         let pcall_name = self.interner.intern(BuiltIns::PCALL);
         let pcall = self.push_instruction(closure_span, ir::InstructionKind::GetMagic(pcall_name));
 
-        let exit_code_var = self.function.variables.insert(ir::Variable::Owned);
+        let exit_code_var = self.function.variables.insert(ir::Variable::Heap);
         self.push_instruction(
             closure_span,
             ir::InstructionKind::OpenVariable(exit_code_var),
@@ -1654,10 +1944,10 @@ where
 
         self.start_new_block(err_block);
         self.push_scope();
-        let err_var =
-            self.declare_var(try_catch_stmt.err_ident.clone(), ir::Variable::Owned.into())?;
+        let err_var = self.open_owned_block_var(try_catch_stmt.err_ident.span, ir::Variable::Heap);
+        self.declare_block_var(try_catch_stmt.err_ident.clone(), err_var)?;
 
-        self.set_var(try_catch_stmt.err_ident.span, err_var, ret_or_err);
+        self.set_var(try_catch_stmt.err_ident.span, err_var.into(), ret_or_err);
         self.statement(&try_catch_stmt.catch_block)?;
         self.pop_scope();
 
@@ -1780,8 +2070,8 @@ where
         self.end_current_block(span, ir::ExitKind::Jump(cleanup_block));
         self.start_new_block(cleanup_block);
 
-        for i in (jump.pop_vars_to + 1..self.scopes.len()).rev() {
-            for &var_id in &self.scopes[i].to_close {
+        for i in (jump.pop_vars_to + 1..self.block_scopes.len()).rev() {
+            for &var_id in &self.block_scopes[i].to_close {
                 let inst_id = self.function.instructions.insert(ir::Instruction {
                     kind: ir::InstructionKind::CloseVariable(var_id),
                     span,
@@ -1801,7 +2091,7 @@ where
             ast::Expression::Constant(c, span) => {
                 self.push_instruction(*span, ir::InstructionKind::Constant(c.clone()))
             }
-            ast::Expression::Ident(s) => self.ident_expr(s),
+            ast::Expression::Ident(s) => self.ident_expr(s)?,
             ast::Expression::Global(span) => {
                 self.push_instruction(*span, ir::InstructionKind::Globals)
             }
@@ -1817,9 +2107,9 @@ where
                     let field_span = field.span();
                     match field {
                         ast::Field::Value(name, value) => {
-                            // Within a struct literal, closures always bind `this` to the struct
+                            // Within a struct literal, closures always bind `self` to the struct
                             // currently being created.
-                            self.push_closure_bind_mode(ClosureBindMode::BindNewThis(object));
+                            self.push_function_bind_mode(FunctionBindMode::BindNewThis(object));
 
                             let value = self.expression(value)?;
                             self.push_instruction(
@@ -1831,10 +2121,10 @@ where
                                 },
                             );
 
-                            self.pop_closure_bind_mode(ClosureBindMode::BindNewThis(object));
+                            self.pop_closure_bind_mode(FunctionBindMode::BindNewThis(object));
                         }
                         ast::Field::Init(name) => {
-                            let value = self.ident_expr(name);
+                            let value = self.ident_expr(name)?;
                             self.push_instruction(
                                 field_span,
                                 ir::InstructionKind::SetFieldConst {
@@ -2116,6 +2406,13 @@ where
                 )?
             }
             ast::Expression::Function(func_expr) => {
+                if !self.settings.allow_non_closure_functions {
+                    return Err(IrGenError {
+                        kind: IrGenErrorKind::NonClosureFunctionsNotAllowed,
+                        span: func_expr.span,
+                    });
+                }
+
                 let allow_constructors = self.settings.allow_constructors;
                 let mut compiler =
                     self.start_inner_function(FunctionRef::Expression(func_expr.span), false);
@@ -2135,9 +2432,32 @@ where
                 };
 
                 let func_id = self.function.functions.insert(function);
-                self.new_closure(func_expr.span, func_id)
+                self.new_bound_function(func_expr.span, func_id)
             }
-            ast::Expression::Call(call) => self.call_expr(call)?,
+            ast::Expression::Closure(closure_expr) => {
+                let mut compiler =
+                    self.start_inner_function(FunctionRef::Expression(closure_expr.span), true);
+
+                compiler.declare_parameters(&closure_expr.parameters)?;
+                compiler.block(&closure_expr.body)?;
+                let function = compiler.finish();
+
+                let func_id = self.function.functions.insert(function);
+                self.push_instruction(
+                    closure_expr.span,
+                    ir::InstructionKind::Closure {
+                        func: func_id,
+                        bind_this: false,
+                    },
+                )
+            }
+            ast::Expression::Call(call) => {
+                let call_scope = self.open_call(call)?;
+                let ret = self
+                    .push_instruction(call.span, ir::InstructionKind::FixedReturn(call_scope, 0));
+                self.push_instruction(call.span, ir::InstructionKind::CloseCall(call_scope));
+                ret
+            }
             ast::Expression::Field(field_expr) => {
                 let base = self.expression(&field_expr.base)?;
                 let field = self.push_instruction(
@@ -2176,7 +2496,7 @@ where
         })
     }
 
-    fn call_expr(&mut self, call: &ast::Call<S>) -> Result<ir::InstId, IrGenError> {
+    fn open_call(&mut self, call: &ast::Call<S>) -> Result<ir::CallScope, IrGenError> {
         enum CallType {
             Function(ir::InstId),
             Method {
@@ -2186,7 +2506,7 @@ where
         }
 
         // Function calls on fields are interpreted as "methods", and implicitly bind the containing
-        // object as `this` for the function call.
+        // object as `self` for the function call.
         let call_type = if let ast::Expression::Field(field_expr) = &*call.base {
             let object = self.expression(&field_expr.base)?;
             let key = self.push_instruction(
@@ -2224,10 +2544,7 @@ where
             },
         );
 
-        let ret = self.push_instruction(call.span, ir::InstructionKind::FixedReturn(call_scope, 0));
-        self.push_instruction(call.span, ir::InstructionKind::CloseCall(call_scope));
-
-        Ok(ret)
+        Ok(call_scope)
     }
 
     fn if_expr(
@@ -2237,7 +2554,7 @@ where
         if_true: impl FnOnce(&mut Self) -> Result<ir::InstId, IrGenError>,
         if_false: impl FnOnce(&mut Self) -> Result<ir::InstId, IrGenError>,
     ) -> Result<ir::InstId, IrGenError> {
-        let res_var = self.function.variables.insert(ir::Variable::Owned);
+        let res_var = self.function.variables.insert(ir::Variable::Heap);
         self.push_instruction(span, ir::InstructionKind::OpenVariable(res_var));
 
         let if_true_block = self.new_block();
@@ -2273,12 +2590,19 @@ where
         Ok(res)
     }
 
-    fn ident_expr(&mut self, ident: &ast::Ident<S>) -> ir::InstId {
-        if let Some(var) = self.find_var(ident) {
-            self.get_var(ident.span, var)
+    fn ident_expr(&mut self, ident: &ast::Ident<S>) -> Result<ir::InstId, IrGenError> {
+        Ok(if let Some(var) = self.find_var(ident) {
+            self.get_var(ident.span, var.into())
         } else {
             match self.var_dict.free_var_mode(ident) {
                 FreeVarMode::This => {
+                    if !self.settings.allow_implicit_self {
+                        return Err(IrGenError {
+                            kind: IrGenErrorKind::ImplicitSelfNotAllowed,
+                            span: ident.span,
+                        });
+                    }
+
                     let this = self.push_instruction(ident.span, ir::InstructionKind::This);
                     let key = self.push_instruction(
                         ident.span,
@@ -2308,7 +2632,7 @@ where
                     ir::InstructionKind::GetMagic(ident.inner.clone()),
                 ),
             }
-        }
+        })
     }
 
     fn short_circuit_and(
@@ -2412,10 +2736,17 @@ where
         Ok(match target {
             ast::MutableExpr::Ident(ident) => {
                 if let Some(var) = self.find_var(ident) {
-                    MutableTarget::Var(var.clone())
+                    MutableTarget::Var(var.into())
                 } else {
                     match self.var_dict.free_var_mode(ident) {
                         FreeVarMode::This => {
+                            if !self.settings.allow_implicit_self {
+                                return Err(IrGenError {
+                                    kind: IrGenErrorKind::ImplicitSelfNotAllowed,
+                                    span: ident.span,
+                                });
+                            }
+
                             let key = self.push_instruction(
                                 target.span(),
                                 ir::InstructionKind::Constant(Constant::String(
@@ -2543,13 +2874,12 @@ where
     fn start_inner_function(
         &mut self,
         reference: FunctionRef,
-        force_closure: bool,
+        capture_outer: bool,
     ) -> FunctionCompiler<'_, S> {
         let mut compiler =
             FunctionCompiler::new(self.settings, self.interner, reference, self.var_dict);
 
-        // If we allow closures, then pass every currently in-scope variable as an upvar.
-        if self.settings.closures || force_closure {
+        if capture_outer {
             let mut upper_constructor_parents = FxHashMap::default();
 
             // Takes a `VarId` in this function and returns an upvar in the inner function.
@@ -2569,35 +2899,51 @@ where
                         }
                     };
 
-                    VarType::UpperConstructorStatic {
+                    FunctionVarDecl::UpperConstructorStatic {
                         parent,
                         field: field.clone(),
                     }
                 };
 
-            for (name, scope_list) in &self.var_lookup {
-                let &scope_index = scope_list.last().unwrap();
-                match &self.scopes[scope_index].visible[name] {
-                    &VarDecl::Normal(var_id) => {
-                        // Named variables should not be duplicated
+            for (name, var) in &self.function_scope_vars {
+                // Don't close over function-scope variables if they are shadowed by a block-scope
+                // variable.
+                if self.block_variable_lookup.contains_key(name) {
+                    continue;
+                }
+
+                match var {
+                    &VariableType::Normal(var_id) => {
                         compiler
-                            .declare_var(name.clone(), ir::Variable::Upper(var_id).into())
+                            .declare_function_var(name.clone(), ir::Variable::Upper(var_id).into())
                             .unwrap();
                     }
-                    VarDecl::ConstructorStatic(field) => {
+                    VariableType::ConstructorStatic(field) => {
                         let FunctionType::Constructor { parent_var, .. } = self.func_type else {
                             panic!("constructor static var in non-constructor function")
                         };
 
                         let var_type =
                             make_constructor_parent_upvar(&mut compiler, parent_var, field);
-                        compiler.declare_var(name.clone(), var_type).unwrap();
+                        compiler
+                            .declare_function_var(name.clone(), var_type)
+                            .unwrap();
                     }
-                    &VarDecl::UpperConstructorStatic { parent, ref field } => {
+                    &VariableType::UpperConstructorStatic { parent, ref field } => {
                         let var_type = make_constructor_parent_upvar(&mut compiler, parent, field);
-                        compiler.declare_var(name.clone(), var_type).unwrap();
+                        compiler
+                            .declare_function_var(name.clone(), var_type)
+                            .unwrap();
                     }
                 }
+            }
+
+            for (name, scope_list) in &self.block_variable_lookup {
+                let &scope_index = scope_list.last().unwrap();
+                let var_id = self.block_scopes[scope_index].visible[name];
+                compiler
+                    .declare_function_var(name.clone(), ir::Variable::Upper(var_id).into())
+                    .unwrap();
             }
         }
 
@@ -2605,157 +2951,200 @@ where
     }
 
     fn push_scope(&mut self) {
-        if self.settings.block_scoping {
-            self.scopes.push(Scope::default());
-        }
+        self.block_scopes.push(BlockScope::default());
     }
 
     fn pop_scope(&mut self) {
-        if self.settings.block_scoping {
-            if let Some(popped_scope) = self.scopes.pop() {
-                // Close every variable in the popped scope.
-                for var_id in popped_scope.to_close {
-                    self.push_instruction(Span::null(), ir::InstructionKind::CloseVariable(var_id));
-                }
+        if let Some(popped_scope) = self.block_scopes.pop() {
+            // Close every variable in the popped scope.
+            for var_id in popped_scope.to_close {
+                self.push_instruction(Span::null(), ir::InstructionKind::CloseVariable(var_id));
+            }
 
-                // Remove visible variables in the popped scope from the var lookup map.
-                for (vname, _) in popped_scope.visible {
-                    let hash_map::Entry::Occupied(mut entry) = self.var_lookup.entry(vname) else {
-                        unreachable!();
-                    };
+            // Remove visible variables in the popped scope from the var lookup map.
+            for (vname, _) in popped_scope.visible {
+                let hash_map::Entry::Occupied(mut entry) = self.block_variable_lookup.entry(vname)
+                else {
+                    unreachable!();
+                };
 
-                    let scope_index = entry.get_mut().pop().unwrap();
-                    // The var lookup map should contain every visible variable in this scope.
-                    assert!(scope_index == self.scopes.len());
+                let scope_index = entry.get_mut().pop().unwrap();
+                // The var lookup map should contain every visible variable in this scope.
+                assert!(scope_index == self.block_scopes.len());
 
-                    // Just remove the variable entry entirely if there are no variables with this
-                    // name visible.
-                    if entry.get().is_empty() {
-                        entry.remove();
-                    }
+                // Just remove the variable entry entirely if there are no variables with this
+                // name visible.
+                if entry.get().is_empty() {
+                    entry.remove();
                 }
             }
         }
     }
 
-    fn declare_var(
+    fn declare_function_var(
         &mut self,
         vname: ast::Ident<S>,
-        var_type: VarType<S>,
-    ) -> Result<VarDecl<S>, IrGenError> {
-        if !self.settings.block_scoping
-            && let Some(shadowed_var) = self.find_var(&vname)
-        {
-            // When block scoping is turned off, variable shadowing within functions is disallowed.
+        var_decl: FunctionVarDecl<S>,
+    ) -> Result<VariableType<S>, IrGenError> {
+        if let Some(shadowed_var) = self.find_var(&vname) {
+            // Function-scope variable shadowing within a single function is disallowed.
             //
-            // A normal variable declaration that shares the name with another is not shadowing, it
-            // is instead a re-declaration of the same variable. Re-declaration with another kind of
-            // variable is always an error.
+            // Upper variables may not shadow nothing else, as they are expected to be unique and
+            // declared first before all other variable types. After this, an upper variable may be
+            // shadowed by any variable type. This matches the behavior of JS, where shadowing is
+            // always allowed across function boundaries.
+            //
+            // Owned, function-scope variables are forbidden from shadowing existing block-scope
+            // variables.
+            //
+            // An owned, function-scope variable declaration that shares the name with another
+            // does not actually shadow, it is instead a re-declaration of the *same* variable.
+            // Re-declaration with another kind of variable is always an error.
             //
             // We forbid static variables from being re-declared at all, because multiple static
             // initializers doesn't make much sense.
             //
-            // We simply ignore the existence of upper variables here to match JS, since
-            // non-block-scoping variables (declared with the `var`) can shadow others across
-            // function boundaries.
-            //
             // Constructor static declarations already cannot share the same name because they are
             // object fields, and cannot be re-declared as a different kind.
+
+            if matches!(
+                var_decl,
+                FunctionVarDecl::Normal(ir::Variable::Upper(_))
+                    | FunctionVarDecl::UpperConstructorStatic { .. }
+            ) {
+                // Upper variables are supposed to be unique and must be declared first.
+                panic!("upper variables should not shadow any other variable");
+            }
+
             match shadowed_var {
-                VarDecl::Normal(shadowed_var_id) => {
-                    match (&var_type, &self.function.variables[shadowed_var_id]) {
-                        (VarType::Normal(ir::Variable::Upper(_)), _) => {
-                            panic!(
-                                "multiple upper variables with the same name cannot be in scope"
-                            );
-                        }
-                        (_, ir::Variable::Upper(_)) => {
-                            // Allow new declarations to shadow any existing upper variables.
-                        }
-                        (VarType::Normal(ir::Variable::Owned), ir::Variable::Owned) => {
+                FoundVariable::Owned {
+                    var_id: shadowed_var_id,
+                    has_block_scope,
+                    is_static,
+                } => {
+                    if has_block_scope {
+                        // Function-scope variables are forbidden from shadowing existing
+                        // block-scope variables.
+                        return Err(IrGenError {
+                            kind: IrGenErrorKind::FunctionScopeCannotShadowBlockScope,
+                            span: vname.span,
+                        });
+                    } else {
+                        if !is_static
+                            && matches!(var_decl, FunctionVarDecl::Normal(ir::Variable::Heap))
+                        {
                             // Normal owned variable re-declarations simply modify the same
                             // variable.
-                            return Ok(VarDecl::Normal(shadowed_var_id));
-                        }
-                        _ => {
+                            return Ok(VariableType::Normal(shadowed_var_id));
+                        } else {
                             // Everything else is an invalid re-declaration.
                             return Err(IrGenError {
-                                kind: IrGenErrorKind::BadVariableRedeclaration,
+                                kind: IrGenErrorKind::BadFunctionScopeVarRedeclaration,
                                 span: vname.span,
                             });
                         }
                     }
                 }
-                VarDecl::ConstructorStatic(_) => {
-                    // This should be checked in the handler of the constructor body.
-                    panic!("constructor static should not have the same name")
+                FoundVariable::ConstructorStatic(_) => {
+                    // Redeclaring a constructor static var is always a bad re-declaration.
+                    return Err(IrGenError {
+                        kind: IrGenErrorKind::BadFunctionScopeVarRedeclaration,
+                        span: vname.span,
+                    });
                 }
-
-                VarDecl::UpperConstructorStatic { .. } => {
+                FoundVariable::Upper(_) | FoundVariable::UpperConstructorStatic { .. } => {
                     // Allow new declarations to shadow any existing upper variables.
                 }
             }
         }
 
-        let top_scope_index = self.scopes.len() - 1;
-        let top_scope = self.scopes.last_mut().unwrap();
-
-        let var_decl = match var_type {
-            VarType::Normal(variable) => {
-                if !self.var_dict.permit_declaration(&vname) {
+        let var_type = match var_decl {
+            FunctionVarDecl::Normal(variable) => {
+                if self.var_dict.is_reserved(&vname) {
                     return Err(IrGenError {
-                        kind: IrGenErrorKind::DeclarationNotPermitted,
+                        kind: IrGenErrorKind::DeclaredNameIsReserved,
                         span: vname.span,
                     });
                 }
 
-                let is_owned = variable.is_owned();
+                let is_heap = variable.is_heap();
                 let var_id = self.function.variables.insert(variable);
 
-                if is_owned {
-                    // This is an owned variable, so we need to open it when it is declared.
-                    if self.settings.block_scoping {
-                        // Since we're using block scoping, we need to close this variable when the
-                        // scope ends.
-                        top_scope.to_close.push(var_id);
-                        self.push_instruction(
-                            vname.span,
-                            ir::InstructionKind::OpenVariable(var_id),
-                        );
-                    } else {
-                        // If we're not using block scoping, just open every variable at the very
-                        // start of the function. This keeps the IR well-formed even with no block
-                        // scoping and no explicit `CloseVariable` instructions.
-                        //
-                        // We push this instruction to `start_block`, which is kept otherwise empty
-                        // for this purpose.
-                        let inst_id = self.function.instructions.insert(ir::Instruction {
-                            kind: ir::InstructionKind::OpenVariable(var_id),
-                            span: vname.span,
-                        });
-                        self.function.blocks[self.function.start_block]
-                            .instructions
-                            .push(inst_id);
-                    }
+                if is_heap {
+                    // This is a new heap variable, so we need to open it.
+                    //
+                    // Since we're not using block scoping, just open every variable at the very
+                    // start of the function. This keeps the IR well-formed even with no block
+                    // scoping and no explicit `CloseVariable` instructions.
+                    //
+                    // We push this instruction to `start_block`, which is kept otherwise empty for
+                    // this purpose.
+                    let inst_id = self.function.instructions.insert(ir::Instruction {
+                        kind: ir::InstructionKind::OpenVariable(var_id),
+                        span: vname.span,
+                    });
+                    self.function.blocks[self.function.start_block]
+                        .instructions
+                        .push(inst_id);
                 }
 
-                VarDecl::Normal(var_id)
+                VariableType::Normal(var_id)
             }
             // Permit any name for constructor statics, since they can be used as field names (which
             // are unrestricted).
-            VarType::ConstructorStatic(field) => VarDecl::ConstructorStatic(field),
-            VarType::UpperConstructorStatic { parent, field } => {
-                VarDecl::UpperConstructorStatic { parent, field }
+            FunctionVarDecl::ConstructorStatic(field) => VariableType::ConstructorStatic(field),
+            FunctionVarDecl::UpperConstructorStatic { parent, field } => {
+                VariableType::UpperConstructorStatic { parent, field }
             }
         };
 
-        let top_scope = self.scopes.last_mut().unwrap();
-        let shadowing = top_scope
-            .visible
-            .insert(vname.clone(), var_decl.clone())
-            .is_some();
+        assert!(
+            self.function_scope_vars
+                .insert(vname, var_type.clone())
+                .is_none()
+        );
 
-        let scope_list = self.var_lookup.entry(vname).or_default();
+        Ok(var_type)
+    }
+
+    fn open_owned_block_var(&mut self, span: Span, variable: ir::Variable<S>) -> ir::VarId {
+        assert!(!matches!(variable, ir::Variable::Upper(_)));
+
+        let top_scope = self.block_scopes.last_mut().unwrap();
+
+        let is_heap = variable.is_heap();
+        let var_id = self.function.variables.insert(variable);
+
+        if is_heap {
+            // This is a new owned variable, so we need to open it.
+            //
+            // Since we're using block scoping, we open it in the current block scope and close it
+            // when the scope ends.
+            top_scope.to_close.push(var_id);
+            self.push_instruction(span, ir::InstructionKind::OpenVariable(var_id));
+        }
+
+        var_id
+    }
+
+    fn declare_block_var(
+        &mut self,
+        vname: ast::Ident<S>,
+        var_id: ir::VarId,
+    ) -> Result<(), IrGenError> {
+        let top_scope_index = self.block_scopes.len() - 1;
+        let top_scope = self.block_scopes.last_mut().unwrap();
+
+        if self.var_dict.is_reserved(&vname) {
+            return Err(IrGenError {
+                kind: IrGenErrorKind::DeclaredNameIsReserved,
+                span: vname.span,
+            });
+        }
+
+        let shadowing = top_scope.visible.insert(vname.clone(), var_id).is_some();
+
+        let scope_list = self.block_variable_lookup.entry(vname).or_default();
         if shadowing {
             // The new variable shadows a previous one, so there should already be an existing entry
             // at the top of the scope list for the top-level scope.
@@ -2766,20 +3155,60 @@ where
             scope_list.push(top_scope_index);
         }
 
-        Ok(var_decl)
+        Ok(())
     }
 
-    fn find_var(&mut self, vname: &S) -> Option<VarDecl<S>> {
-        let scope_index = self.var_lookup.get(vname).and_then(|l| l.last().copied())?;
-        Some(self.scopes[scope_index].visible[vname].clone())
+    fn find_var(&mut self, vname: &S) -> Option<FoundVariable<S>> {
+        if let Some(block_scope_index) = self
+            .block_variable_lookup
+            .get(vname)
+            .and_then(|l| l.last().copied())
+        {
+            let var_id = self.block_scopes[block_scope_index].visible[vname];
+            Some(match self.function.variables[var_id] {
+                ir::Variable::Heap => FoundVariable::Owned {
+                    var_id,
+                    is_static: false,
+                    has_block_scope: true,
+                },
+                ir::Variable::Static(_) => FoundVariable::Owned {
+                    var_id,
+                    is_static: true,
+                    has_block_scope: true,
+                },
+                ir::Variable::Upper(_) => FoundVariable::Upper(var_id),
+            })
+        } else if let Some(function_var_decl) = self.function_scope_vars.get(vname).cloned() {
+            Some(match function_var_decl {
+                VariableType::Normal(var_id) => match self.function.variables[var_id] {
+                    ir::Variable::Heap => FoundVariable::Owned {
+                        var_id,
+                        is_static: false,
+                        has_block_scope: false,
+                    },
+                    ir::Variable::Static(_) => FoundVariable::Owned {
+                        var_id,
+                        is_static: true,
+                        has_block_scope: false,
+                    },
+                    ir::Variable::Upper(_) => FoundVariable::Upper(var_id),
+                },
+                VariableType::ConstructorStatic(field) => FoundVariable::ConstructorStatic(field),
+                VariableType::UpperConstructorStatic { parent, field } => {
+                    FoundVariable::UpperConstructorStatic { parent, field }
+                }
+            })
+        } else {
+            None
+        }
     }
 
-    fn get_var(&mut self, span: Span, var: VarDecl<S>) -> ir::InstId {
+    fn get_var(&mut self, span: Span, var: VariableType<S>) -> ir::InstId {
         match var {
-            VarDecl::Normal(var_id) => {
+            VariableType::Normal(var_id) => {
                 self.push_instruction(span, ir::InstructionKind::GetVariable(var_id))
             }
-            VarDecl::ConstructorStatic(field) => {
+            VariableType::ConstructorStatic(field) => {
                 let FunctionType::Constructor { parent, .. } = self.func_type else {
                     panic!("constructor static var in non-constructor function")
                 };
@@ -2788,29 +3217,29 @@ where
                     span,
                     ir::InstructionKind::GetFieldConst {
                         object: parent,
-                        key: Constant::String(field.clone()),
+                        key: Constant::String(field),
                     },
                 )
             }
-            VarDecl::UpperConstructorStatic { parent, field } => {
+            VariableType::UpperConstructorStatic { parent, field } => {
                 let parent = self.push_instruction(span, ir::InstructionKind::GetVariable(parent));
                 self.push_instruction(
                     span,
                     ir::InstructionKind::GetFieldConst {
                         object: parent,
-                        key: Constant::String(field.clone()),
+                        key: Constant::String(field),
                     },
                 )
             }
         }
     }
 
-    fn set_var(&mut self, span: Span, var: VarDecl<S>, value: ir::InstId) {
+    fn set_var(&mut self, span: Span, var: VariableType<S>, value: ir::InstId) {
         match var {
-            VarDecl::Normal(var_id) => {
+            VariableType::Normal(var_id) => {
                 self.push_instruction(span, ir::InstructionKind::SetVariable(var_id, value));
             }
-            VarDecl::ConstructorStatic(field) => {
+            VariableType::ConstructorStatic(field) => {
                 let FunctionType::Constructor { parent, .. } = self.func_type else {
                     panic!("constructor static var in non-constructor function")
                 };
@@ -2824,7 +3253,7 @@ where
                     },
                 );
             }
-            VarDecl::UpperConstructorStatic { parent, field } => {
+            VariableType::UpperConstructorStatic { parent, field } => {
                 let parent = self.push_instruction(span, ir::InstructionKind::GetVariable(parent));
                 self.push_instruction(
                     span,
@@ -2864,7 +3293,7 @@ where
     fn push_break_target(&mut self, target_block: ir::BlockId) {
         self.break_target_stack.push(NonLocalJump {
             target: target_block,
-            pop_vars_to: self.scopes.len() - 1,
+            pop_vars_to: self.block_scopes.len() - 1,
         });
     }
 
@@ -2880,7 +3309,7 @@ where
     fn push_continue_target(&mut self, target_block: ir::BlockId) {
         self.continue_target_stack.push(NonLocalJump {
             target: target_block,
-            pop_vars_to: self.scopes.len() - 1,
+            pop_vars_to: self.block_scopes.len() - 1,
         });
     }
 
@@ -2893,33 +3322,33 @@ where
         );
     }
 
-    fn push_closure_bind_mode(&mut self, mode: ClosureBindMode) {
-        self.closure_bind_mode.push(mode);
+    fn push_function_bind_mode(&mut self, mode: FunctionBindMode) {
+        self.function_bind_mode.push(mode);
     }
 
-    fn pop_closure_bind_mode(&mut self, mode: ClosureBindMode) {
+    fn pop_closure_bind_mode(&mut self, mode: FunctionBindMode) {
         assert!(
-            self.closure_bind_mode.pop().is_some_and(|m| m == mode),
+            self.function_bind_mode.pop().is_some_and(|m| m == mode),
             "mismatched closure bind mode pop"
         );
     }
 
-    /// Create a new function with the current function bind mode
-    fn new_closure(&mut self, span: Span, func_id: ir::FuncId) -> ir::InstId {
+    /// Create a new inner function with the current function bind mode
+    fn new_bound_function(&mut self, span: Span, func_id: ir::FuncId) -> ir::InstId {
         match self
-            .closure_bind_mode
+            .function_bind_mode
             .last()
             .copied()
-            .unwrap_or(ClosureBindMode::BindDefault)
+            .unwrap_or(FunctionBindMode::BindDefault)
         {
-            ClosureBindMode::BindDefault => self.push_instruction(
+            FunctionBindMode::BindDefault => self.push_instruction(
                 span,
                 ir::InstructionKind::Closure {
                     func: func_id,
                     bind_this: true,
                 },
             ),
-            ClosureBindMode::BindNewThis(this) => {
+            FunctionBindMode::BindNewThis(this) => {
                 let this_scope = self.function.this_scopes.insert(());
                 self.push_instruction(span, ir::InstructionKind::OpenThisScope(this_scope));
                 self.push_instruction(span, ir::InstructionKind::SetThis(this_scope, this));
@@ -2933,7 +3362,7 @@ where
                 self.push_instruction(span, ir::InstructionKind::CloseThisScope(this_scope));
                 closure
             }
-            ClosureBindMode::BindNothing => self.push_instruction(
+            FunctionBindMode::BindNothing => self.push_instruction(
                 span,
                 ir::InstructionKind::Closure {
                     func: func_id,

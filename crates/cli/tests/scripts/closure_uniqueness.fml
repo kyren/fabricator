@@ -1,9 +1,9 @@
-var arr = [];
+let arr = [];
 
-for (var i = 0; i < 10; i += 1) {
-	var j = i;
-	arr[i] = function() {
-		var old = j;
+for (let i = 0; i < 10; i += 1) {
+	let j = i;
+	arr[i] = closure() {
+		let old = j;
 		j += 1;
 		return old;
 	};

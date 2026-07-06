@@ -103,7 +103,7 @@ fn main() -> Result<ExitCode, Error> {
             let mut editor = rustyline::DefaultEditor::new()?;
             let thread = interpreter.enter(|ctx| ctx.stash(vm::Thread::new(&ctx)));
 
-            let settings = CompileSettings::modern().set_optimization_passes(cli.opt_level);
+            let settings = CompileSettings::strict().set_optimization_passes(cli.opt_level);
 
             let mut imports =
                 interpreter.enter(|ctx| ctx.stash(ImportItems::with_magic(&ctx, ctx.stdlib())));

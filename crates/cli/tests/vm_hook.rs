@@ -31,7 +31,7 @@ fn test_vm_call_return_hooks() {
             ctx,
             "default",
             compiler::ImportItems::with_magic(&ctx, magic),
-            compiler::CompileSettings::modern(),
+            compiler::CompileSettings::strict(),
             "vm hook test",
             r#"
                 function test1() {
@@ -122,7 +122,7 @@ fn test_vm_return_hook_on_error() {
             ctx,
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
-            compiler::CompileSettings::modern(),
+            compiler::CompileSettings::strict(),
             "vm hook test",
             r#"
                 function test1() {
@@ -193,11 +193,11 @@ fn test_vm_step_hook() {
             ctx,
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
-            compiler::CompileSettings::modern(),
+            compiler::CompileSettings::strict(),
             "vm hook test",
             r#"
                 function small_loop() {
-                    for (var i = 0; i < 100; ++i) {}
+                    for (let i = 0; i < 100; ++i) {}
                 }
 
                 while true {

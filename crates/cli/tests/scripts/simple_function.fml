@@ -1,4 +1,4 @@
-var f = function(a, b) {
+let f = closure(a, b) {
     return a + b;
 };
 

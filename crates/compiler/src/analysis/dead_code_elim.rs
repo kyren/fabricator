@@ -185,12 +185,13 @@ pub fn eliminate_dead_code<S>(ir: &mut ir::Function<S>) {
         }
 
         // Any parameter of `Exit::Return` or `Exit::Throw` is always live.
-        match ir.blocks[block_id].exit.kind {
-            ir::ExitKind::Return { value: Some(value) } | ir::ExitKind::Throw(value) => {
+        if let exit @ (ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_)) =
+            &ir.blocks[block_id].exit.kind
+        {
+            for value in exit.sources() {
                 live_instructions.insert(value.index() as usize);
                 worklist.push(Work::Instruction(value));
             }
-            _ => {}
         }
     }
 

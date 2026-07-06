@@ -377,6 +377,7 @@ impl<'gc> Prototype<'gc> {
                 }
                 Instruction::PushStackFrame {} => {}
                 Instruction::PopStackFrame {} => {}
+                Instruction::JoinStackFrame {} => {}
                 Instruction::StackPush { source } => {
                     mark_reg_idx(source);
                 }

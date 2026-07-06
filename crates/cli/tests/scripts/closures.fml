@@ -1,17 +1,17 @@
-j = 0;
+let j = 0;
 
-var create = function() {
-    var j = 0;
+let create = closure() {
+    let j = 0;
 
-    return function() {
+    return closure() {
         j += 1;
       	return j;
     };
 };
 
-var a = create();
-var b = create();
-var c = create();
+let a = create();
+let b = create();
+let c = create();
 
 assert(a() == 1);
 assert(b() == 1);

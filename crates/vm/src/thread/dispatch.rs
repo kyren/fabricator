@@ -938,6 +938,19 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     }
 
     #[inline]
+    fn join_stack_frame(&mut self) -> Result<(), Self::Error> {
+        if self.stack_frame_boundaries.len() < 2 {
+            Err(OpError::NoStackFrame {
+                op: "join_stack_frame",
+            }
+            .into())
+        } else {
+            self.stack_frame_boundaries.pop_back();
+            Ok(())
+        }
+    }
+
+    #[inline]
     fn stack_push(&mut self, source: RegIdx) -> Result<(), Self::Error> {
         if self.stack_frame_boundaries.is_empty() {
             return Err(OpError::NoStackFrame { op: "stack_push" }.into());

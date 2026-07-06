@@ -1,11 +1,11 @@
-var state = 0;
+let state = 0;
 
-var side_effect = function() {
+let side_effect = closure() {
     state += 1;
     return true;
 };
 
-var r;
+let r;
 
 
 r = false && side_effect();
