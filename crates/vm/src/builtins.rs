@@ -126,6 +126,7 @@ impl<'gc> BuiltIns<'gc> {
             set_super: Callback::from_fn(mc, |ctx, mut exec| {
                 let (obj, parent): (Object, Option<Object>) = exec.stack().consume(ctx)?;
                 obj.set_parent(&ctx, parent)?;
+                exec.stack().replace(ctx, (obj, parent));
                 Ok(())
             }),
 

@@ -1,4 +1,4 @@
-var s = {};
+let s = {};
 
 struct_set(s, "and", "you");
 assert(struct_get(s, "and") == "you");

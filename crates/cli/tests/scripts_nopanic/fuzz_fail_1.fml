@@ -2,7 +2,7 @@
     return true;
 
     var e;
-    function a() {
+    closure a() {
         black_box(e);
     }
 }

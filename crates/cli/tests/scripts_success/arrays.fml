@@ -1,4 +1,4 @@
-var a = [
+let a = [
 	0,
 	1,
 	2,
@@ -20,21 +20,21 @@ assert(a[1] == 11);
 assert(a[2] == 12);
 assert(a[3] == 13);
 
-var b = array_create(3, "hello");
+let b = array_create(3, "hello");
 assert(b[0] == "hello");
 assert(b[1] == "hello");
 assert(b[2] == "hello");
-assert(pcall(function() { var _ = b[3]; }) == false);
+assert(pcall(closure() { let _ = b[3]; }) == false);
 
-var c = array_create_ext(3, function(i) {
+let c = array_create_ext(3, closure(i) {
 	return i;
 });
 assert(c[0] == 0);
 assert(c[1] == 1);
 assert(c[2] == 2);
-assert(pcall(function() { var _ = c[3]; }) == false);
+assert(pcall(closure() { let _ = c[3]; }) == false);
 
-var c = [
+let c = [
 	0,
 	1,
 	2,
@@ -54,7 +54,7 @@ assert(c[0] == 0);
 assert(c[1] == 1);
 assert(c[2] == 4);
 
-var c = [
+let c = [
 	0,
 	1,
 	2,
