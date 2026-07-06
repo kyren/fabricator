@@ -27,7 +27,7 @@ pub fn convert_to_ssa<S>(ir: &mut ir::Function<S>) {
     // variables shared to a lower function.
     let mut skip_vars = FxHashSet::default();
     for (var_id, var) in ir.variables.iter() {
-        if !var.is_owned() {
+        if !var.is_heap() {
             skip_vars.insert(var_id);
         }
     }

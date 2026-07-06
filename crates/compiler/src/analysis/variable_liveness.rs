@@ -97,7 +97,7 @@ impl VariableLiveness {
 
         for var_id in variables.ids() {
             match ir.variables[var_id] {
-                ir::Variable::Owned => {}
+                ir::Variable::Heap => {}
                 ir::Variable::Static(_) | ir::Variable::Upper(_) => {
                     if let Some(&inst_loc) = variable_open
                         .get(var_id)
@@ -209,7 +209,7 @@ mod tests {
         let mut blocks = ir::BlockMap::new();
         let mut variables = ir::VariableMap::new();
 
-        let var = variables.insert(ir::Variable::Owned);
+        let var = variables.insert(ir::Variable::Heap);
 
         let block_a_id = blocks.insert(ir::Block::default());
         let block_b_id = blocks.insert(ir::Block::default());
@@ -264,7 +264,7 @@ mod tests {
         let mut blocks = ir::BlockMap::new();
         let mut variables = ir::VariableMap::new();
 
-        let var = variables.insert(ir::Variable::Owned);
+        let var = variables.insert(ir::Variable::Heap);
 
         let block_a_id = blocks.insert(ir::Block::default());
         let block_b_id = blocks.insert(ir::Block::default());

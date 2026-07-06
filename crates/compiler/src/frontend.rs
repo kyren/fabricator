@@ -130,10 +130,10 @@ impl CompileSettings {
         }
     }
 
-    pub fn modern() -> Self {
+    pub fn strict() -> Self {
         Self {
             parse: ParseSettings::strict(),
-            ir_gen: IrGenSettings::modern(),
+            ir_gen: IrGenSettings::strict(),
             optimization_passes: 2,
             export_top_level_functions: true,
             verify_ir: cfg!(debug_assertions),
@@ -141,7 +141,7 @@ impl CompileSettings {
     }
 
     /// If the given path has a (case-insensitive) `.gml` extension, then compile in compat mode,
-    /// otherwise modern.
+    /// otherwise strict.
     pub fn from_path(path: &Path) -> Self {
         if path
             .extension()
@@ -149,7 +149,7 @@ impl CompileSettings {
         {
             Self::compat()
         } else {
-            Self::modern()
+            Self::strict()
         }
     }
 
@@ -690,8 +690,8 @@ where
     R: Fn(&S) -> bool,
     M: Fn(&S) -> Option<ExternalVarMode>,
 {
-    fn permit_declaration(&self, name: &S) -> bool {
-        !(self.is_reserved)(name)
+    fn is_reserved(&self, name: &S) -> bool {
+        (self.is_reserved)(name)
     }
 
     fn free_var_mode(&self, ident: &S) -> FreeVarMode {

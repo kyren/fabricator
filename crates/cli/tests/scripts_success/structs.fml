@@ -1,6 +1,6 @@
-var b = 2;
+let b = 2;
 
-var s = {
+let s = {
     a: 1,
     b,
 };
