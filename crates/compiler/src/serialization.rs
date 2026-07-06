@@ -380,6 +380,7 @@ enum SerializeInstruction {
     },
     PushStackFrame {},
     PopStackFrame {},
+    JoinStackFrame {},
     StackPush {
         source: RegIdx,
     },
@@ -704,6 +705,7 @@ impl SerializeInstruction {
             },
             Instruction::PushStackFrame {} => SerializeInstruction::PushStackFrame {},
             Instruction::PopStackFrame {} => SerializeInstruction::PopStackFrame {},
+            Instruction::JoinStackFrame {} => SerializeInstruction::JoinStackFrame {},
             Instruction::StackPush { source } => {
                 SerializeInstruction::StackPush { source: source.0 }
             }
@@ -1065,6 +1067,7 @@ impl SerializeInstruction {
             },
             SerializeInstruction::PushStackFrame {} => Instruction::PushStackFrame {},
             SerializeInstruction::PopStackFrame {} => Instruction::PopStackFrame {},
+            SerializeInstruction::JoinStackFrame {} => Instruction::JoinStackFrame {},
             SerializeInstruction::StackPush { source } => Instruction::StackPush {
                 source: source.into(),
             },
