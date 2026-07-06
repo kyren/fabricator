@@ -1,11 +1,11 @@
-var res;
-assert(pcall(function(a, b, c) {
-    res = a + b + c;
-}, 1, 2, 3) == true);
-assert(res == 6);
+let success, res = pcall(closure(a, b, c) {
+        return a + b + c;
+    }, 1, 2, 3);
+assert(success == true, res == 6);
 
-assert(pcall(function(a, b) {
-    return a + b;
-}, "a", {}) == false);
+let success, res = pcall(closure(a, b) {
+        return a + b;
+    }, "1", {});
+assert(success == false);
 
 return true;

@@ -129,10 +129,10 @@ impl CompileSettings {
         }
     }
 
-    pub fn modern() -> Self {
+    pub fn strict() -> Self {
         Self {
             parse: ParseSettings::strict(),
-            ir_gen: IrGenSettings::modern(),
+            ir_gen: IrGenSettings::strict(),
             optimization_passes: 2,
             export_top_level_functions: true,
             verify_ir: cfg!(debug_assertions),
@@ -140,7 +140,7 @@ impl CompileSettings {
     }
 
     /// If the given path has a (case-insensitive) `.gml` extension, then compile in compat mode,
-    /// otherwise modern.
+    /// otherwise strict.
     pub fn from_path(path: &Path) -> Self {
         if path
             .extension()
@@ -148,7 +148,7 @@ impl CompileSettings {
         {
             Self::compat()
         } else {
-            Self::modern()
+            Self::strict()
         }
     }
 
@@ -615,8 +615,8 @@ struct CompilerVarDict<'gc, 'a> {
 }
 
 impl<'gc, 'a> VarDict<vm::String<'gc>> for CompilerVarDict<'gc, 'a> {
-    fn permit_declaration(&self, name: &vm::String<'gc>) -> bool {
-        !self.enums.find(name).is_some()
+    fn is_reserved(&self, name: &vm::String<'gc>) -> bool {
+        self.enums.find(name).is_some()
     }
 
     fn free_var_mode(&self, ident: &vm::String<'gc>) -> FreeVarMode {

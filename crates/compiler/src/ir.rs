@@ -122,7 +122,7 @@ pub enum BinOp {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Variable<S> {
     /// A heap variable owned by a closure.
-    Owned,
+    Heap,
     /// A static variable owned by a *prototype*.
     Static(Constant<S>),
     /// A reference to a variable in the immediate parent function. Contains the `VarId` for the
@@ -132,8 +132,8 @@ pub enum Variable<S> {
 
 impl<S> Variable<S> {
     #[must_use]
-    pub fn is_owned(&self) -> bool {
-        matches!(self, Self::Owned)
+    pub fn is_heap(&self) -> bool {
+        matches!(self, Self::Heap)
     }
 }
 
@@ -217,7 +217,7 @@ impl<S> Variable<S> {
 /// and will rely on IR optimization to convert them to SSA form, potentially by inserting `Phi` and
 /// `Upsilon` instructions.
 ///
-/// Normally, *all* owned IR variables can be converted into SSA form in this way, but any variables
+/// Normally, *all* heap IR variables can be converted into SSA form in this way, but any variables
 /// that are prototype-level statics or shared across parent / child closures will not be converted
 /// to SSA form. These shared variables that remain after optimization will instead be represented
 /// by VM "heap" variables, allowing them to be shared across closures.
@@ -225,12 +225,12 @@ impl<S> Variable<S> {
 /// Variables have a "scope" as described above, their scope is opened with `OpenVariable` and
 /// closed with `CloseVariable`. There are very few additional rules:
 ///
-/// * Static and upvalue variables can be used anywhere in their containing function and in
-///   well-formed IR must have neither `OpenVariable` nor `CloseVariable` instructions. These
-///   variables are always considered open for the entire CFG of the function that contains
+/// * Static and Upper variables can be used anywhere in their containing function and in
+///   well-formed IR must have neither `OpenVariable` nor `CloseVariable` instructions for them.
+///   These variables are always considered open for the entire CFG of the function that contains
 ///   them.
 /// * The `Closure` instruction is considered to use every variable that the child function
-///   references as an upvalue.
+///   references as an Upper variable.
 ///
 /// # Nested Scopes
 ///
@@ -961,7 +961,7 @@ impl<S: AsRef<str>> Function<S> {
                 write_indent(f, 4)?;
                 write!(f, "{}: ", id)?;
                 match var {
-                    Variable::Owned => write!(f, "Owned")?,
+                    Variable::Heap => write!(f, "Heap")?,
                     Variable::Static(init) => write!(f, "Static({:?})", init.as_str())?,
                     Variable::Upper(uid) => write!(f, "Upper({uid})")?,
                 }

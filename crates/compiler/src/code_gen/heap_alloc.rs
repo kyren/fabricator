@@ -31,7 +31,7 @@ impl<S: Clone> HeapAllocation<S> {
         // First, assign all of the non-owned variables because those require no analysis.
         for (var_id, var) in ir.variables.iter() {
             let desc = match var {
-                ir::Variable::Owned => continue,
+                ir::Variable::Heap => continue,
                 ir::Variable::Static(init) => HeapVarDescriptor::Static(init.clone()),
                 &ir::Variable::Upper(parent_var_id) => HeapVarDescriptor::UpValue(
                     *parent_heap_indexes

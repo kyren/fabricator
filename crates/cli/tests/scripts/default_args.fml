@@ -1,4 +1,4 @@
-function def_args(a=1, b=2) {
+function def_args(a = 1, b = 2) {
 	return a + b;
 }
 
@@ -6,7 +6,7 @@ assert(def_args() == 3);
 assert(def_args(2) == 4);
 assert(def_args(2, 3) == 5);
 
-var def_args_lambda = function(a=2, b=3) {
+let def_args_lambda = closure(a = 2, b = 3) {
 	return a + b;
 };
 
@@ -14,13 +14,13 @@ assert(def_args_lambda() == 5);
 assert(def_args_lambda(3) == 6);
 assert(def_args_lambda(3, 4) == 7);
 
-var side_effect = function() {
-	static num_side_effects = 0;
+let side_effect = closure() {
+	static let num_side_effects = 0;
 	num_side_effects += 1;	
 	return num_side_effects;
 };
 
-var def_args_call = function(param=side_effect()) {
+let def_args_call = closure(param = side_effect()) {
 	return param;
 };
 

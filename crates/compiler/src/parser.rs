@@ -25,6 +25,8 @@ pub enum ParseErrorKind {
     NewDisallowed,
     #[error("accessor indexing is disallowed")]
     AccessorsDisallowed,
+    #[error("`globalvar` declarations are disallowed")]
+    GlobalVarDisallowed,
 }
 
 impl ParseErrorKind {
@@ -59,6 +61,8 @@ pub struct ParseSettings {
     pub allow_new: bool,
     /// Allow `|` `?` `#` `@` `$` accessors.
     pub allow_accessors: bool,
+    /// Allow `globalvar` declarations.
+    pub allow_globalvar: bool,
 }
 
 impl ParseSettings {
@@ -67,6 +71,7 @@ impl ParseSettings {
             strict_semicolons: true,
             allow_new: false,
             allow_accessors: false,
+            allow_globalvar: false,
         }
     }
 
@@ -75,6 +80,7 @@ impl ParseSettings {
             strict_semicolons: false,
             allow_new: true,
             allow_accessors: true,
+            allow_globalvar: true,
         }
     }
 
@@ -200,16 +206,54 @@ where
                 ast::Statement::Function(self.parse_function_stmt()?),
                 StatementTrailer::NoSemiColon,
             ),
-            TokenKind::Var => (
-                ast::Statement::Var(self.parse_var_declaration_list(TokenKind::Var)?),
-                StatementTrailer::SemiColon,
+            TokenKind::Closure => (
+                ast::Statement::Closure(self.parse_closure_stmt()?),
+                StatementTrailer::NoSemiColon,
             ),
-            TokenKind::Static => (
-                ast::Statement::Static(self.parse_var_declaration_list(TokenKind::Static)?),
-                StatementTrailer::SemiColon,
-            ),
+            TokenKind::Var => {
+                self.advance(1);
+                (
+                    ast::Statement::Var(self.parse_var_declaration_list(tok_span)?),
+                    StatementTrailer::SemiColon,
+                )
+            }
+            TokenKind::Static => {
+                self.advance(1);
+
+                self.look_ahead(1);
+                (
+                    match *self.peek(0) {
+                        Token {
+                            kind: TokenKind::Let,
+                            span: let_span,
+                        } => {
+                            self.advance(1);
+                            ast::Statement::StaticLet(
+                                self.parse_let_declaration_list(tok_span.combine(let_span))?,
+                            )
+                        }
+                        _ => ast::Statement::Static(self.parse_var_declaration_list(tok_span)?),
+                    },
+                    StatementTrailer::SemiColon,
+                )
+            }
+            TokenKind::Let => {
+                self.advance(1);
+                (
+                    ast::Statement::Let(self.parse_let_declaration_list(tok_span)?),
+                    StatementTrailer::SemiColon,
+                )
+            }
             TokenKind::GlobalVar => {
                 self.advance(1);
+
+                if !self.settings.allow_globalvar {
+                    return Err(ParseError {
+                        kind: ParseErrorKind::GlobalVarDisallowed,
+                        span: tok_span,
+                    });
+                }
+
                 let ident = self.parse_identifier()?;
                 (
                     ast::Statement::GlobalVar(ident),
@@ -218,30 +262,25 @@ where
             }
             TokenKind::Return => {
                 self.advance(1);
-                self.look_ahead(1);
                 let mut span = tok_span;
 
-                let value = if matches!(self.peek(0).kind, TokenKind::SemiColon) {
-                    None
+                self.look_ahead(1);
+                let values = if matches!(self.peek(0).kind, TokenKind::SemiColon) {
+                    Vec::new()
                 } else {
-                    let expr = self.parse_expression()?;
-                    span = span.combine(expr.span());
-                    Some(expr)
+                    let (values, values_span) = self.parse_expr_list()?;
+                    span = span.combine(values_span);
+                    values
                 };
+
                 (
-                    ast::Statement::Return(ast::ReturnStmt { value, span }),
+                    ast::Statement::Return(ast::ReturnStmt { values, span }),
                     StatementTrailer::SemiColon,
                 )
             }
             TokenKind::Exit => {
                 self.advance(1);
-                (
-                    ast::Statement::Return(ast::ReturnStmt {
-                        value: None,
-                        span: tok_span,
-                    }),
-                    StatementTrailer::SemiColon,
-                )
+                (ast::Statement::Exit(tok_span), StatementTrailer::SemiColon)
             }
             TokenKind::If => {
                 self.advance(1);
@@ -451,9 +490,9 @@ where
 
     fn parse_var_declaration_list(
         &mut self,
-        decl_token: TokenKind<()>,
+        decl_span: Span,
     ) -> Result<ast::VarDeclarationStmt<S>, ParseError> {
-        let mut span = self.parse_token(decl_token)?;
+        let mut span = decl_span;
         let mut vars = Vec::new();
         loop {
             let name = self.parse_identifier()?;
@@ -481,6 +520,70 @@ where
         }
 
         Ok(ast::VarDeclarationStmt { vars, span })
+    }
+
+    fn parse_let_declaration_list(
+        &mut self,
+        decl_span: Span,
+    ) -> Result<ast::LetDeclarationStmt<S>, ParseError> {
+        let mut span = decl_span;
+        let mut vars = Vec::new();
+
+        loop {
+            let name = self.parse_identifier()?;
+            span = span.combine(name.span);
+
+            vars.push(name);
+
+            self.look_ahead(1);
+            if matches!(self.peek(0).kind, TokenKind::Comma) {
+                self.advance(1);
+            } else {
+                break;
+            }
+        }
+
+        self.look_ahead(1);
+        let Token {
+            kind: ref next_kind,
+            span: next_span,
+        } = *self.peek(0);
+        if matches!(next_kind, TokenKind::Equal) {
+            self.advance(1);
+            span = span.combine(next_span);
+
+            let (exprs, exprs_span) = self.parse_expr_list()?;
+            span = span.combine(exprs_span);
+
+            Ok(ast::LetDeclarationStmt { vars, exprs, span })
+        } else {
+            Ok(ast::LetDeclarationStmt {
+                vars,
+                exprs: Vec::new(),
+                span,
+            })
+        }
+    }
+
+    fn parse_expr_list(&mut self) -> Result<(Vec<ast::Expression<S>>, Span), ParseError> {
+        let mut span = Span::null();
+        let mut exprs = Vec::new();
+
+        loop {
+            let expr = self.parse_expression()?;
+            span = span.combine(expr.span());
+
+            exprs.push(expr);
+
+            self.look_ahead(1);
+            if matches!(self.peek(0).kind, TokenKind::Comma) {
+                self.advance(1);
+            } else {
+                break;
+            }
+        }
+
+        Ok((exprs, span))
     }
 
     fn parse_function_stmt(&mut self) -> Result<ast::FunctionStmt<S>, ParseError> {
@@ -531,6 +634,23 @@ where
             name,
             is_constructor,
             inherit,
+            parameters,
+            body,
+            span,
+        })
+    }
+
+    fn parse_closure_stmt(&mut self) -> Result<ast::ClosureStmt<S>, ParseError> {
+        let mut span = self.parse_token(TokenKind::Closure)?;
+        let name = self.parse_identifier()?;
+        let parameters = self.parse_parameter_list()?.0;
+
+        self.parse_token(TokenKind::LeftBrace)?;
+        let body = self.parse_block(|t| matches!(t, TokenKind::RightBrace))?;
+        span = span.combine(self.parse_token(TokenKind::RightBrace).unwrap());
+
+        Ok(ast::ClosureStmt {
+            name,
             parameters,
             body,
             span,
@@ -1062,6 +1182,21 @@ where
                     span,
                 }))
             }
+            TokenKind::Closure => {
+                self.advance(1);
+
+                let parameters = self.parse_parameter_list()?.0;
+
+                self.parse_token(TokenKind::LeftBrace)?;
+                let body = self.parse_block(|t| matches!(t, TokenKind::RightBrace))?;
+                let span = tok_span.combine(self.parse_token(TokenKind::RightBrace).unwrap());
+
+                Ok(ast::Expression::Closure(ast::ClosureExpr {
+                    parameters,
+                    body,
+                    span,
+                }))
+            }
             TokenKind::New => {
                 self.advance(1);
 
@@ -1449,8 +1584,10 @@ fn token_indicator<S>(t: &TokenKind<S>) -> &'static str {
         TokenKind::DoubleGreater => ">>",
         TokenKind::Enum => "enum",
         TokenKind::Function => "function",
+        TokenKind::Closure => "closure",
         TokenKind::Constructor => "constructor",
         TokenKind::Var => "var",
+        TokenKind::Let => "let",
         TokenKind::Static => "static",
         TokenKind::GlobalVar => "globalvar",
         TokenKind::Switch => "switch",
@@ -1588,8 +1725,7 @@ mod tests {
         parse(
             ParseSettings {
                 strict_semicolons: true,
-                allow_new: true,
-                allow_accessors: true,
+                ..ParseSettings::compat()
             },
             SOURCE,
         )
