@@ -107,7 +107,7 @@ fn try_scripts(dir: &str) {
                     if ext.eq_ignore_ascii_case("gml") {
                         compiler::CompileSettings::compat()
                     } else {
-                        compiler::CompileSettings::modern()
+                        compiler::CompileSettings::strict()
                     },
                 );
             }

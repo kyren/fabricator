@@ -16,7 +16,7 @@ fn benchmark_script(c: &mut Criterion, name: &str, code: &str) {
             ctx,
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
-            compiler::CompileSettings::modern(),
+            compiler::CompileSettings::strict(),
             name,
             code,
         )

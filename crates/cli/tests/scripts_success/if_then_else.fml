@@ -1,4 +1,4 @@
-var i = undefined;
+let i = undefined;
 
 if true {
     i = 1;
@@ -12,10 +12,10 @@ if false {
     i = 2;
 }
 
-var i = 2;
+let i = 2;
 assert(i == 2);
 
-var j = undefined;
+let j = undefined;
 
 if i == 1 {
     j = 1;
