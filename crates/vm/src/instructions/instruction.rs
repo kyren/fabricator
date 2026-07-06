@@ -190,6 +190,10 @@ macro_rules! __for_each_instruction {
             pop_stack_frame = PopStackFrame {};
 
             [basic]
+            /// Merge the topmost stack frame with the one below it.
+            join_stack_frame = JoinStackFrame {};
+
+            [basic]
             /// Push a value onto the top of the current stack frame.
             stack_push = StackPush { source: RegIdx };
 

@@ -60,7 +60,7 @@ pub fn merge_blocks<S>(ir: &mut ir::Function<S>) {
             let &first = merges.first().unwrap();
             let &last = merges.last().unwrap();
 
-            merged_block.exit = ir.blocks[last].exit;
+            merged_block.exit = ir.blocks[last].exit.clone();
 
             ir.blocks[first] = merged_block;
         }
@@ -87,7 +87,7 @@ pub fn redirect_empty_blocks<S>(ir: &mut ir::Function<S>) {
     let mut empty_block_redirects = FxHashMap::default();
     for (block_id, block) in ir.blocks.iter() {
         if block.instructions.is_empty() {
-            empty_block_redirects.insert(block_id, block.exit.kind);
+            empty_block_redirects.insert(block_id, block.exit.kind.clone());
         }
     }
 
@@ -101,10 +101,15 @@ pub fn redirect_empty_blocks<S>(ir: &mut ir::Function<S>) {
         encountered_jump_targets.insert(block_id);
 
         let mut next_block = block_id;
-        while let Some(&empty_exit) = empty_block_redirects.get(&next_block) {
-            empty_block_redirects.insert(block_id, empty_exit);
+        while let Some(empty_exit) = empty_block_redirects.get(&next_block) {
+            let target = if let &ir::ExitKind::Jump(target) = empty_exit {
+                Some(target)
+            } else {
+                None
+            };
+            empty_block_redirects.insert(block_id, empty_exit.clone());
 
-            let ir::ExitKind::Jump(target) = empty_exit else {
+            let Some(target) = target else {
                 break;
             };
             next_block = target;
@@ -124,8 +129,8 @@ pub fn redirect_empty_blocks<S>(ir: &mut ir::Function<S>) {
     for block in ir.blocks.values_mut() {
         match &mut block.exit.kind {
             &mut ir::ExitKind::Jump(target) => {
-                if let Some(&exit) = empty_block_redirects.get(&target) {
-                    block.exit.kind = exit;
+                if let Some(exit) = empty_block_redirects.get(&target) {
+                    block.exit.kind = exit.clone();
                 }
             }
             ir::ExitKind::Branch {

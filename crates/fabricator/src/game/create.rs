@@ -574,7 +574,7 @@ fn load_scripts(
             script_compiler.add_chunk(
                 match script.mode {
                     ScriptMode::Compat => compiler::CompileSettings::compat(),
-                    ScriptMode::Modern => compiler::CompileSettings::modern(),
+                    ScriptMode::Modern => compiler::CompileSettings::strict(),
                 },
                 script.path.to_string_lossy().as_ref(),
                 &code_buf,
@@ -619,7 +619,7 @@ fn load_scripts(
                     },
                     match script.mode {
                         ScriptMode::Compat => compiler::CompileSettings::compat(),
-                        ScriptMode::Modern => compiler::CompileSettings::modern(),
+                        ScriptMode::Modern => compiler::CompileSettings::strict(),
                     }
                     .export_top_level_functions(false),
                     script.path.to_string_lossy().as_ref(),
