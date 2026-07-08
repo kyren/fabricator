@@ -284,6 +284,13 @@ pub fn variable_global_exists<'gc>(
 
 pub fn core_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_constant(ctx, "pointer_null", Pointer::null().into_userdata(&ctx));
+
+    // Aliases for builtins that match GMS2
+    let builtins = vm::BuiltIns::singleton(ctx);
+    lib.insert_constant(ctx, "method", builtins.bind);
+    lib.insert_constant(ctx, "static_get", builtins.get_super);
+    lib.insert_constant(ctx, "static_get", builtins.set_super);
+
     lib.insert_callback(ctx, "gml_pragma", gml_pragma);
     lib.insert_callback(ctx, "typeof", typeof_);
     lib.insert_callback(ctx, "bool", bool);

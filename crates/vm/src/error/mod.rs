@@ -120,9 +120,9 @@ impl fmt::Display for ExternValue {
     }
 }
 
-impl<'gc> From<Value<'gc>> for ExternValue {
-    fn from(value: Value<'gc>) -> Self {
-        match value {
+impl<'gc, T: Into<Value<'gc>>> From<T> for ExternValue {
+    fn from(value: T) -> Self {
+        match value.into() {
             Value::Undefined => ExternValue::Undefined,
             Value::Boolean(b) => ExternValue::Boolean(b),
             Value::Integer(i) => ExternValue::Integer(i),

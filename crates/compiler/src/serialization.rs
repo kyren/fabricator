@@ -210,41 +210,41 @@ enum SerializeInstruction {
     },
     GetField {
         dest: RegIdx,
-        object: RegIdx,
+        target: RegIdx,
         key: RegIdx,
     },
     SetField {
-        object: RegIdx,
+        target: RegIdx,
         key: RegIdx,
         value: RegIdx,
     },
     GetFieldConst {
         dest: RegIdx,
-        object: RegIdx,
+        target: RegIdx,
         key: ConstIdx,
     },
     SetFieldConst {
-        object: RegIdx,
+        target: RegIdx,
         key: ConstIdx,
         value: RegIdx,
     },
     GetIndex {
         dest: RegIdx,
-        array: RegIdx,
+        target: RegIdx,
         index: RegIdx,
     },
     SetIndex {
-        array: RegIdx,
+        target: RegIdx,
         index: RegIdx,
         value: RegIdx,
     },
     GetIndexConst {
         dest: RegIdx,
-        array: RegIdx,
+        target: RegIdx,
         index: ConstIdx,
     },
     SetIndexConst {
-        array: RegIdx,
+        target: RegIdx,
         index: ConstIdx,
         value: RegIdx,
     },
@@ -407,14 +407,6 @@ enum SerializeInstruction {
         dest: RegIdx,
         index: StackIdx,
     },
-    GetIndexMulti {
-        dest: RegIdx,
-        array: RegIdx,
-    },
-    SetIndexMulti {
-        array: RegIdx,
-        value: RegIdx,
-    },
     GetMagic {
         dest: RegIdx,
         magic: MagicIdx,
@@ -516,57 +508,63 @@ impl SerializeInstruction {
             },
             Instruction::NewObject { dest } => SerializeInstruction::NewObject { dest: dest.0 },
             Instruction::NewArray { dest } => SerializeInstruction::NewArray { dest: dest.0 },
-            Instruction::GetField { dest, object, key } => SerializeInstruction::GetField {
+            Instruction::GetField { dest, target, key } => SerializeInstruction::GetField {
                 dest: dest.0,
-                object: object.0,
+                target: target.0,
                 key: key.0,
             },
-            Instruction::SetField { object, key, value } => SerializeInstruction::SetField {
-                object: object.0,
+            Instruction::SetField { target, key, value } => SerializeInstruction::SetField {
+                target: target.0,
                 key: key.0,
                 value: value.0,
             },
-            Instruction::GetFieldConst { dest, object, key } => {
+            Instruction::GetFieldConst { dest, target, key } => {
                 SerializeInstruction::GetFieldConst {
                     dest: dest.0,
-                    object: object.0,
+                    target: target.0,
                     key: key.0,
                 }
             }
-            Instruction::SetFieldConst { object, key, value } => {
+            Instruction::SetFieldConst { target, key, value } => {
                 SerializeInstruction::SetFieldConst {
-                    object: object.0,
+                    target: target.0,
                     key: key.0,
                     value: value.0,
                 }
             }
-            Instruction::GetIndex { dest, array, index } => SerializeInstruction::GetIndex {
+            Instruction::GetIndex {
+                dest,
+                target,
+                index,
+            } => SerializeInstruction::GetIndex {
                 dest: dest.0,
-                array: array.0,
+                target: target.0,
                 index: index.0,
             },
             Instruction::SetIndex {
-                array,
+                target,
                 index,
                 value,
             } => SerializeInstruction::SetIndex {
-                array: array.0,
+                target: target.0,
                 index: index.0,
                 value: value.0,
             },
-            Instruction::GetIndexConst { dest, array, index } => {
-                SerializeInstruction::GetIndexConst {
-                    dest: dest.0,
-                    array: array.0,
-                    index: index.0,
-                }
-            }
+            Instruction::GetIndexConst {
+                dest,
+                target,
+                index,
+            } => SerializeInstruction::GetIndexConst {
+                dest: dest.0,
+                target: target.0,
+                index: index.0,
+            },
             Instruction::SetIndexConst {
-                array,
+                target,
                 index,
                 value,
             } => SerializeInstruction::SetIndexConst {
-                array: array.0,
+                target: target.0,
                 index: index.0,
                 value: value.0,
             },
@@ -740,14 +738,6 @@ impl SerializeInstruction {
                 dest: dest.0,
                 index: index.0,
             },
-            Instruction::GetIndexMulti { dest, array } => SerializeInstruction::GetIndexMulti {
-                dest: dest.0,
-                array: array.0,
-            },
-            Instruction::SetIndexMulti { array, value } => SerializeInstruction::SetIndexMulti {
-                array: array.0,
-                value: value.0,
-            },
             Instruction::GetMagic { dest, magic } => SerializeInstruction::GetMagic {
                 dest: dest.0,
                 magic: magic.0,
@@ -877,57 +867,63 @@ impl SerializeInstruction {
                 Instruction::NewObject { dest: dest.into() }
             }
             SerializeInstruction::NewArray { dest } => Instruction::NewArray { dest: dest.into() },
-            SerializeInstruction::GetField { dest, object, key } => Instruction::GetField {
+            SerializeInstruction::GetField { dest, target, key } => Instruction::GetField {
                 dest: dest.into(),
-                object: object.into(),
+                target: target.into(),
                 key: key.into(),
             },
-            SerializeInstruction::SetField { object, key, value } => Instruction::SetField {
-                object: object.into(),
+            SerializeInstruction::SetField { target, key, value } => Instruction::SetField {
+                target: target.into(),
                 key: key.into(),
                 value: value.into(),
             },
-            SerializeInstruction::GetFieldConst { dest, object, key } => {
+            SerializeInstruction::GetFieldConst { dest, target, key } => {
                 Instruction::GetFieldConst {
                     dest: dest.into(),
-                    object: object.into(),
+                    target: target.into(),
                     key: key.into(),
                 }
             }
-            SerializeInstruction::SetFieldConst { object, key, value } => {
+            SerializeInstruction::SetFieldConst { target, key, value } => {
                 Instruction::SetFieldConst {
-                    object: object.into(),
+                    target: target.into(),
                     key: key.into(),
                     value: value.into(),
                 }
             }
-            SerializeInstruction::GetIndex { dest, array, index } => Instruction::GetIndex {
+            SerializeInstruction::GetIndex {
+                dest,
+                target,
+                index,
+            } => Instruction::GetIndex {
                 dest: dest.into(),
-                array: array.into(),
+                target: target.into(),
                 index: index.into(),
             },
             SerializeInstruction::SetIndex {
-                array,
+                target,
                 index,
                 value,
             } => Instruction::SetIndex {
-                array: array.into(),
+                target: target.into(),
                 index: index.into(),
                 value: value.into(),
             },
-            SerializeInstruction::GetIndexConst { dest, array, index } => {
-                Instruction::GetIndexConst {
-                    dest: dest.into(),
-                    array: array.into(),
-                    index: index.into(),
-                }
-            }
+            SerializeInstruction::GetIndexConst {
+                dest,
+                target,
+                index,
+            } => Instruction::GetIndexConst {
+                dest: dest.into(),
+                target: target.into(),
+                index: index.into(),
+            },
             SerializeInstruction::SetIndexConst {
-                array,
+                target,
                 index,
                 value,
             } => Instruction::SetIndexConst {
-                array: array.into(),
+                target: target.into(),
                 index: index.into(),
                 value: value.into(),
             },
@@ -1100,14 +1096,6 @@ impl SerializeInstruction {
             SerializeInstruction::StackGet { dest, index } => Instruction::StackGet {
                 dest: dest.into(),
                 index: index.into(),
-            },
-            SerializeInstruction::GetIndexMulti { dest, array } => Instruction::GetIndexMulti {
-                dest: dest.into(),
-                array: array.into(),
-            },
-            SerializeInstruction::SetIndexMulti { array, value } => Instruction::SetIndexMulti {
-                array: array.into(),
-                value: value.into(),
             },
             SerializeInstruction::GetMagic { dest, magic } => Instruction::GetMagic {
                 dest: dest.into(),
