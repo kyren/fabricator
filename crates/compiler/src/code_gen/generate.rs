@@ -219,7 +219,7 @@ fn codegen_function<S: Clone + Eq + Hash>(
                     let magic_idx = magic_index(magic_var)
                         .ok_or(ProtoGenError::NoSuchMagic)?
                         .try_into()
-                        .map_err(|_| ProtoGenError::MagicIndexOverflow)?;
+                        .map_err(|_| ProtoGenError::MagicIndexOutOfRange)?;
                     vm_instructions.push((
                         Instruction::GetMagic {
                             dest: reg_alloc.instruction_registers[inst_id],
@@ -232,7 +232,7 @@ fn codegen_function<S: Clone + Eq + Hash>(
                     let magic_idx = magic_index(magic_var)
                         .ok_or(ProtoGenError::NoSuchMagic)?
                         .try_into()
-                        .map_err(|_| ProtoGenError::MagicIndexOverflow)?;
+                        .map_err(|_| ProtoGenError::MagicIndexOutOfRange)?;
                     vm_instructions.push((
                         Instruction::SetMagic {
                             magic: magic_idx,
@@ -305,9 +305,11 @@ fn codegen_function<S: Clone + Eq + Hash>(
                 }
                 ir::InstructionKind::FixedArgument(index) => {
                     vm_instructions.push((
-                        Instruction::GetArgConst {
+                        Instruction::ArgGet {
                             dest: reg_alloc.instruction_registers[inst_id],
-                            index: get_const_index(&Constant::Integer(index.try_into().unwrap()))?,
+                            index: index
+                                .try_into()
+                                .map_err(|_| ProtoGenError::StackIndexOutOfRange)?,
                         },
                         inst.span,
                     ));
@@ -322,7 +324,7 @@ fn codegen_function<S: Clone + Eq + Hash>(
                 }
                 ir::InstructionKind::Argument(index) => {
                     vm_instructions.push((
-                        Instruction::GetArg {
+                        Instruction::ArgGetAt {
                             dest: reg_alloc.instruction_registers[inst_id],
                             index: reg_alloc.instruction_registers[index],
                         },
@@ -673,9 +675,11 @@ fn codegen_function<S: Clone + Eq + Hash>(
                 }
                 ir::InstructionKind::FixedReturn(_, index) => {
                     vm_instructions.push((
-                        Instruction::StackGetConst {
+                        Instruction::StackGet {
                             dest: reg_alloc.instruction_registers[inst_id],
-                            index: get_const_index(&Constant::Integer(index.try_into().unwrap()))?,
+                            index: index
+                                .try_into()
+                                .map_err(|_| ProtoGenError::StackIndexOutOfRange)?,
                         },
                         inst.span,
                     ));

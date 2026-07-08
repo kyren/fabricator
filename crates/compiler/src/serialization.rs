@@ -138,6 +138,7 @@ impl<S> SerializeHeapVarDescriptor<S> {
 }
 
 type RegIdx = u8;
+type StackIdx = u8;
 type ConstIdx = u16;
 type HeapIdx = u16;
 type ProtoIdx = u16;
@@ -193,13 +194,13 @@ enum SerializeInstruction {
     ArgCount {
         dest: RegIdx,
     },
-    GetArg {
+    ArgGet {
+        dest: RegIdx,
+        index: StackIdx,
+    },
+    ArgGetAt {
         dest: RegIdx,
         index: RegIdx,
-    },
-    GetArgConst {
-        dest: RegIdx,
-        index: ConstIdx,
     },
     NewObject {
         dest: RegIdx,
@@ -381,6 +382,9 @@ enum SerializeInstruction {
     PushStackFrame {},
     PopStackFrame {},
     JoinStackFrame {},
+    SplitStackFrame {
+        base: StackIdx,
+    },
     StackPush {
         source: RegIdx,
     },
@@ -401,11 +405,7 @@ enum SerializeInstruction {
     },
     StackGet {
         dest: RegIdx,
-        index: RegIdx,
-    },
-    StackGetConst {
-        dest: RegIdx,
-        index: ConstIdx,
+        index: StackIdx,
     },
     GetIndexMulti {
         dest: RegIdx,
@@ -506,11 +506,11 @@ impl SerializeInstruction {
                 SerializeInstruction::CurrentClosure { dest: dest.0 }
             }
             Instruction::ArgCount { dest } => SerializeInstruction::ArgCount { dest: dest.0 },
-            Instruction::GetArg { dest, index } => SerializeInstruction::GetArg {
+            Instruction::ArgGet { dest, index } => SerializeInstruction::ArgGet {
                 dest: dest.0,
                 index: index.0,
             },
-            Instruction::GetArgConst { dest, index } => SerializeInstruction::GetArgConst {
+            Instruction::ArgGetAt { dest, index } => SerializeInstruction::ArgGetAt {
                 dest: dest.0,
                 index: index.0,
             },
@@ -706,6 +706,9 @@ impl SerializeInstruction {
             Instruction::PushStackFrame {} => SerializeInstruction::PushStackFrame {},
             Instruction::PopStackFrame {} => SerializeInstruction::PopStackFrame {},
             Instruction::JoinStackFrame {} => SerializeInstruction::JoinStackFrame {},
+            Instruction::SplitStackFrame { base } => {
+                SerializeInstruction::SplitStackFrame { base: base.0 }
+            }
             Instruction::StackPush { source } => {
                 SerializeInstruction::StackPush { source: source.0 }
             }
@@ -734,10 +737,6 @@ impl SerializeInstruction {
                 source_d: source_d.0,
             },
             Instruction::StackGet { dest, index } => SerializeInstruction::StackGet {
-                dest: dest.0,
-                index: index.0,
-            },
-            Instruction::StackGetConst { dest, index } => SerializeInstruction::StackGetConst {
                 dest: dest.0,
                 index: index.0,
             },
@@ -866,11 +865,11 @@ impl SerializeInstruction {
                 Instruction::CurrentClosure { dest: dest.into() }
             }
             SerializeInstruction::ArgCount { dest } => Instruction::ArgCount { dest: dest.into() },
-            SerializeInstruction::GetArg { dest, index } => Instruction::GetArg {
+            SerializeInstruction::ArgGet { dest, index } => Instruction::ArgGet {
                 dest: dest.into(),
                 index: index.into(),
             },
-            SerializeInstruction::GetArgConst { dest, index } => Instruction::GetArgConst {
+            SerializeInstruction::ArgGetAt { dest, index } => Instruction::ArgGetAt {
                 dest: dest.into(),
                 index: index.into(),
             },
@@ -1068,6 +1067,9 @@ impl SerializeInstruction {
             SerializeInstruction::PushStackFrame {} => Instruction::PushStackFrame {},
             SerializeInstruction::PopStackFrame {} => Instruction::PopStackFrame {},
             SerializeInstruction::JoinStackFrame {} => Instruction::JoinStackFrame {},
+            SerializeInstruction::SplitStackFrame { base } => {
+                Instruction::SplitStackFrame { base: base.into() }
+            }
             SerializeInstruction::StackPush { source } => Instruction::StackPush {
                 source: source.into(),
             },
@@ -1096,10 +1098,6 @@ impl SerializeInstruction {
                 source_d: source_d.into(),
             },
             SerializeInstruction::StackGet { dest, index } => Instruction::StackGet {
-                dest: dest.into(),
-                index: index.into(),
-            },
-            SerializeInstruction::StackGetConst { dest, index } => Instruction::StackGetConst {
                 dest: dest.into(),
                 index: index.into(),
             },
