@@ -24,8 +24,10 @@ pub enum ProtoGenError {
     ConstantOverflow,
     #[error("too many sub-functions")]
     PrototypeOverflow,
+    #[error("stack index out of range")]
+    StackIndexOutOfRange,
     #[error("missing magic value")]
     NoSuchMagic,
     #[error("magic value index too large")]
-    MagicIndexOverflow,
+    MagicIndexOutOfRange,
 }

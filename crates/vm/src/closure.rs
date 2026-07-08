@@ -211,17 +211,6 @@ impl<'gc> Prototype<'gc> {
                 }
             };
 
-            let verify_const_as_index = |const_idx: ConstIdx| {
-                if matches!(constants[const_idx.index()], Constant::Integer(i) if usize::try_from(i).is_ok())
-                {
-                    Ok(())
-                } else {
-                    Err(PrototypeVerificationError::IndexIsNotUsize(
-                        const_idx, inst_index,
-                    ))
-                }
-            };
-
             match inst {
                 Instruction::Undefined { dest } => {
                     mark_reg_idx(dest);
@@ -273,13 +262,12 @@ impl<'gc> Prototype<'gc> {
                 Instruction::ArgCount { dest } => {
                     mark_reg_idx(dest);
                 }
-                Instruction::GetArg { dest, index } => {
+                Instruction::ArgGet { dest, .. } => {
+                    mark_reg_idx(dest);
+                }
+                Instruction::ArgGetAt { dest, index } => {
                     mark_reg_idx(dest);
                     mark_reg_idx(index);
-                }
-                Instruction::GetArgConst { dest, index } => {
-                    mark_reg_idx(dest);
-                    verify_const_as_index(index)?;
                 }
                 Instruction::NewObject { dest } => {
                     mark_reg_idx(dest);
@@ -378,6 +366,7 @@ impl<'gc> Prototype<'gc> {
                 Instruction::PushStackFrame {} => {}
                 Instruction::PopStackFrame {} => {}
                 Instruction::JoinStackFrame {} => {}
+                Instruction::SplitStackFrame { .. } => {}
                 Instruction::StackPush { source } => {
                     mark_reg_idx(source);
                 }
@@ -405,13 +394,8 @@ impl<'gc> Prototype<'gc> {
                     mark_reg_idx(source_c);
                     mark_reg_idx(source_d);
                 }
-                Instruction::StackGet { dest, index } => {
+                Instruction::StackGet { dest, .. } => {
                     mark_reg_idx(dest);
-                    mark_reg_idx(index);
-                }
-                Instruction::StackGetConst { dest, index } => {
-                    mark_reg_idx(dest);
-                    verify_const_as_index(index)?;
                 }
                 Instruction::GetIndexMulti { dest, array } => {
                     mark_reg_idx(dest);
@@ -669,17 +653,17 @@ impl<'gc> Closure<'gc> {
         self.0.proto
     }
 
-    /// Returns the currently bound `this` object.
+    /// Returns the currently bound `self` object.
     ///
-    /// Will return `Value::Undefined` if there is no bound `this` object set.
+    /// Will return `Value::Undefined` if there is no bound `self` object set.
     #[inline]
     pub fn this(self) -> Value<'gc> {
         self.0.this
     }
 
-    /// Return a clone of this closure with the embedded `this` value changed to the provided one.
+    /// Return a clone of this closure with the embedded `self` value changed to the provided one.
     ///
-    /// If `Value::Undefined` is provided, then the bound `this` object will be removed.
+    /// If `Value::Undefined` is provided, then the bound `self` object will be removed.
     #[inline]
     pub fn rebind(self, mc: &Mutation<'gc>, this: Value<'gc>) -> Closure<'gc> {
         Self(Gc::new(

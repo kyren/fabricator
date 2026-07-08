@@ -663,7 +663,7 @@ pub fn object_api<'gc>(
 
         let Some(to_destroy) = to_destroy else {
             return Err(vm::RuntimeError::msg(
-                "`instance_destroy` expects an object or instance on the `this` stack",
+                "`instance_destroy` expects an object or instance on the `self` stack",
             ));
         };
 

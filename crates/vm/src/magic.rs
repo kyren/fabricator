@@ -17,13 +17,13 @@ pub struct MagicReadOnly;
 
 /// A trait for "magic" global variables in FML.
 ///
-/// Magic variables are always available in every scope, and can only be shadowed by a local `var`
-/// declaration (never via `this`). This means that any time a *free* variable is referenced with
-/// the name of a magic variable, it will always refer to the magic variable (and never to, for
-/// example, a global).
+/// Magic variables are always available in every scope, and can only be shadowed by a local
+/// variable declaration. This means that any time a *free* variable is referenced with the name
+/// of a magic variable, it will always refer to the magic variable (and never to, for example,
+/// a global).
 ///
 /// Magic variables can be used to provide an API to scripts that is usable no matter the current
-/// `this` value, without having to explicitly reference the `global` table.
+/// `self` value, without having to explicitly reference the `global` table.
 ///
 /// Magic variables can optionally be writeable. This does not *replace* the magic value like would
 /// occur normally in FML, instead it triggers a write callback for that particular magic value.
