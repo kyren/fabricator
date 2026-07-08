@@ -32,7 +32,7 @@ pub fn merge_blocks<S>(ir: &mut ir::Function<S>) {
                     merge(if_false);
                 }
             }
-            ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_) => {}
+            ir::ExitKind::Exit | ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_) => {}
         }
     }
 
@@ -143,7 +143,7 @@ pub fn redirect_empty_blocks<S>(ir: &mut ir::Function<S>) {
                     *if_true = target;
                 }
             }
-            ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_) => {}
+            ir::ExitKind::Exit | ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_) => {}
         }
     }
 }

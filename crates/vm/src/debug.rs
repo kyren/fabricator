@@ -255,7 +255,7 @@ impl<'gc> Chunk<'gc> {
             FunctionRef::Named(ref_name, span) => FunctionIdentifier {
                 chunk_name: self.name().clone(),
                 line_number: Some(self.line_number(span.start())),
-                function_ref_name: Some(ref_name.clone()),
+                function_ref_name: Some(ref_name),
             },
             FunctionRef::Expression(span) => FunctionIdentifier {
                 chunk_name: self.name().clone(),
