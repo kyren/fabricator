@@ -1,5 +1,4 @@
-var z = 0;
-assert(is_nan(z / z));
+assert(is_nan(NaN));
 assert(is_nan(0 * infinity));
 assert(is_nan(infinity - infinity));
 assert(is_nan(infinity / infinity));
@@ -19,6 +18,6 @@ assert(is_nan("NaN"));
 assert(is_nan(undefined));
 assert(is_nan([]));
 assert(is_nan({}));
-assert(is_nan(function() {}));
+assert(is_nan(closure() {}));
 
 return true;

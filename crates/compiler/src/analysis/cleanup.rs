@@ -126,9 +126,11 @@ pub fn clean_unused_call_scopes<S>(ir: &mut ir::Function<S>) {
 
     for inst in ir.instructions.values() {
         match inst.kind {
-            ir::InstructionKind::OpenCall { scope, .. }
-            | ir::InstructionKind::FixedReturn(scope, _)
-            | ir::InstructionKind::CloseCall(scope) => {
+            ir::InstructionKind::OpenCallScope(scope)
+            | ir::InstructionKind::PushStack(scope, _)
+            | ir::InstructionKind::Call { scope, .. }
+            | ir::InstructionKind::GetStack(scope, _)
+            | ir::InstructionKind::CloseCallScope(scope) => {
                 used_scopes.insert(scope.index() as usize);
             }
             _ => {}

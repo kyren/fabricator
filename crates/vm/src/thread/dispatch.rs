@@ -29,15 +29,6 @@ pub enum OpError {
     BadObject { object: ExternValue },
     #[error("bad key {key:?}")]
     BadKey { key: ExternValue },
-    #[error("{target:?} does not allow indexing")]
-    NotIndexable { target: ExternValue },
-    #[error("{target:?} does not allow multi-indexing")]
-    NotMultiIndexable { target: ExternValue },
-    #[error("bad index {index:?} of {target:?}")]
-    BadIndex {
-        target: ExternValue,
-        index: ExternValue,
-    },
     #[error("no such field {field:?} in {target:?}")]
     NoSuchField {
         target: ExternValue,
@@ -54,6 +45,19 @@ pub enum OpError {
 #[derive(Debug, Error)]
 #[error("out of bounds access on array for index {0}")]
 pub struct ArrayBoundsError(usize);
+
+#[derive(Debug, Clone, Error)]
+pub enum IndexError {
+    #[error("{target:?} does not allow indexing")]
+    NotIndexable { target: ExternValue },
+    #[error("bad index {index:?} of {target:?}")]
+    BadIndex {
+        target: ExternValue,
+        index: ExternValue,
+    },
+    #[error("{target:?} does not allow multi indexing with {len} values")]
+    BadMultiIndex { target: ExternValue, len: usize },
+}
 
 pub(super) enum Next<'gc> {
     Call {
@@ -169,43 +173,31 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
     fn do_get_index(
         &self,
         target: Value<'gc>,
-        indexes: &[Value<'gc>],
+        index: Value<'gc>,
     ) -> Result<Value<'gc>, RuntimeError> {
         match target {
             Value::Object(object) => {
-                if indexes.len() != 1 {
-                    return Err(OpError::NotMultiIndexable {
+                let Some(index) = index.coerce_string(self.ctx) else {
+                    return Err(IndexError::BadIndex {
                         target: target.into(),
-                    }
-                    .into());
-                }
-                let Some(index) = indexes[0].coerce_string(self.ctx) else {
-                    return Err(OpError::BadIndex {
-                        target: target.into(),
-                        index: indexes[0].into(),
+                        index: index.into(),
                     }
                     .into());
                 };
                 Ok(object.get(index).unwrap_or_default())
             }
             Value::Array(array) => {
-                if indexes.len() != 1 {
-                    return Err(OpError::NotMultiIndexable {
-                        target: target.into(),
-                    }
-                    .into());
-                }
-                let index = indexes[0]
+                let index = index
                     .cast_integer()
                     .and_then(|i| i.try_into().ok())
-                    .ok_or_else(|| OpError::BadIndex {
+                    .ok_or_else(|| IndexError::BadIndex {
                         target: target.into(),
-                        index: indexes[0].into(),
+                        index: index.into(),
                     })?;
                 Ok(array.get(index).ok_or(ArrayBoundsError(index))?)
             }
-            Value::UserData(user_data) => Ok(user_data.get_index(self.ctx, indexes)?),
-            _ => Err(OpError::NotIndexable {
+            Value::UserData(user_data) => Ok(user_data.get_index(self.ctx, &[index])?),
+            _ => Err(IndexError::NotIndexable {
                 target: target.into(),
             }
             .into()),
@@ -216,21 +208,15 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
     fn do_set_index(
         &self,
         target: Value<'gc>,
-        indexes: &[Value<'gc>],
+        index: Value<'gc>,
         value: Value<'gc>,
     ) -> Result<(), RuntimeError> {
         match target {
             Value::Object(object) => {
-                if indexes.len() != 1 {
-                    return Err(OpError::NotMultiIndexable {
+                let Some(index) = index.coerce_string(self.ctx) else {
+                    return Err(IndexError::BadIndex {
                         target: target.into(),
-                    }
-                    .into());
-                }
-                let Some(index) = indexes[0].coerce_string(self.ctx) else {
-                    return Err(OpError::BadIndex {
-                        target: target.into(),
-                        index: indexes[0].into(),
+                        index: index.into(),
                     }
                     .into());
                 };
@@ -238,25 +224,18 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
                 Ok(())
             }
             Value::Array(array) => {
-                if indexes.len() != 1 {
-                    return Err(OpError::NotMultiIndexable {
-                        target: target.into(),
-                    }
-                    .into());
-                }
-
-                let index = indexes[0]
+                let index = index
                     .cast_integer()
                     .and_then(|i| i.try_into().ok())
-                    .ok_or_else(|| OpError::BadIndex {
+                    .ok_or_else(|| IndexError::BadIndex {
                         target: target.into(),
-                        index: indexes[0].into(),
+                        index: index.into(),
                     })?;
                 array.set(&self.ctx, index, value);
                 Ok(())
             }
-            Value::UserData(user_data) => Ok(user_data.set_index(self.ctx, indexes, value)?),
-            _ => Err(OpError::NotIndexable {
+            Value::UserData(user_data) => Ok(user_data.set_index(self.ctx, &[index], value)?),
+            _ => Err(IndexError::NotIndexable {
                 target: target.into(),
             }
             .into()),
@@ -513,10 +492,8 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
 
     #[inline]
     fn get_index(&mut self, dest: RegIdx, array: RegIdx, index: RegIdx) -> Result<(), Self::Error> {
-        self.registers[dest.index()] = self.do_get_index(
-            self.registers[array.index()],
-            &[self.registers[index.index()]],
-        )?;
+        self.registers[dest.index()] =
+            self.do_get_index(self.registers[array.index()], self.registers[index.index()])?;
         Ok(())
     }
 
@@ -529,7 +506,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     ) -> Result<(), Self::Error> {
         self.do_set_index(
             self.registers[array.index()],
-            &[self.registers[index.index()]],
+            self.registers[index.index()],
             self.registers[value.index()],
         )?;
         Ok(())
@@ -544,7 +521,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     ) -> Result<(), Self::Error> {
         self.registers[dest.index()] = self.do_get_index(
             self.registers[array.index()],
-            &[self.closure.prototype().constants()[index.index()].to_value()],
+            self.closure.prototype().constants()[index.index()].to_value(),
         )?;
         Ok(())
     }
@@ -558,7 +535,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     ) -> Result<(), Self::Error> {
         self.do_set_index(
             self.registers[array.index()],
-            &[self.closure.prototype().constants()[index.index()].to_value()],
+            self.closure.prototype().constants()[index.index()].to_value(),
             self.registers[value.index()],
         )?;
         Ok(())
@@ -1031,44 +1008,6 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             .copied()
             .unwrap_or_default();
         Ok(())
-    }
-
-    #[inline]
-    fn get_index_multi(&mut self, dest: RegIdx, array: RegIdx) -> Result<(), Self::Error> {
-        let stack_frame_start =
-            self.stack_frame_boundaries
-                .pop_back()
-                .ok_or_else(|| OpError::InvalidStackFrames {
-                    op: "get_index_multi",
-                })?;
-
-        let res = self.do_get_index(
-            self.registers[array.index()],
-            &self.stack[stack_frame_start..],
-        );
-        self.stack.truncate(stack_frame_start);
-
-        self.registers[dest.index()] = res?;
-        Ok(())
-    }
-
-    #[inline]
-    fn set_index_multi(&mut self, array: RegIdx, value: RegIdx) -> Result<(), Self::Error> {
-        let stack_frame_start =
-            self.stack_frame_boundaries
-                .pop_back()
-                .ok_or_else(|| OpError::InvalidStackFrames {
-                    op: "set_index_multi",
-                })?;
-
-        let res = self.do_set_index(
-            self.registers[array.index()],
-            &self.stack[stack_frame_start..],
-            self.registers[value.index()],
-        );
-
-        self.stack.truncate(stack_frame_start);
-        Ok(res?)
     }
 
     #[inline]

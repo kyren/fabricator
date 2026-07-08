@@ -142,15 +142,15 @@ macro_rules! for_each_instruction {
             [basic] new_object = NewObject { dest: RegIdx };
             [basic] new_array = NewArray { dest: RegIdx };
 
-            [basic] get_field = GetField { dest: RegIdx, object: RegIdx, key: RegIdx };
-            [basic] set_field = SetField  { object: RegIdx, key: RegIdx, value: RegIdx };
-            [basic] get_field_const = GetFieldConst { dest: RegIdx, object: RegIdx, key: ConstIdx };
-            [basic] set_field_const = SetFieldConst  { object: RegIdx, key: ConstIdx, value: RegIdx };
+            [basic] get_field = GetField { dest: RegIdx, target: RegIdx, key: RegIdx };
+            [basic] set_field = SetField  { target: RegIdx, key: RegIdx, value: RegIdx };
+            [basic] get_field_const = GetFieldConst { dest: RegIdx, target: RegIdx, key: ConstIdx };
+            [basic] set_field_const = SetFieldConst  { target: RegIdx, key: ConstIdx, value: RegIdx };
 
-            [basic] get_index = GetIndex { dest: RegIdx, array: RegIdx, index: RegIdx };
-            [basic] set_index = SetIndex  { array: RegIdx, index: RegIdx, value: RegIdx };
-            [basic] get_index_const = GetIndexConst { dest: RegIdx, array: RegIdx, index: ConstIdx };
-            [basic] set_index_const = SetIndexConst { array: RegIdx, index: ConstIdx, value: RegIdx };
+            [basic] get_index = GetIndex { dest: RegIdx, target: RegIdx, index: RegIdx };
+            [basic] set_index = SetIndex  { target: RegIdx, index: RegIdx, value: RegIdx };
+            [basic] get_index_const = GetIndexConst { dest: RegIdx, target: RegIdx, index: ConstIdx };
+            [basic] set_index_const = SetIndexConst { target: RegIdx, index: ConstIdx, value: RegIdx };
 
             [basic] copy = Copy { dest: RegIdx, source: RegIdx };
 
@@ -230,18 +230,6 @@ macro_rules! for_each_instruction {
             /// If the stack index is out of range of the current stack frame, then the destination
             /// register is set to `Undefined`.
             stack_get = StackGet { dest: RegIdx, index: StackIdx };
-
-            [basic]
-            /// Get an index from a value with multiple indexes from the topmost stack frame.
-            ///
-            /// Automatically pops the topmost stack frame.
-            get_index_multi = GetIndexMulti { dest: RegIdx, array: RegIdx };
-
-            [basic]
-            /// Set an index on a value with multiple indexes from the topmost stack frame.
-            ///
-            /// Automatically pops the topmost stack frame.
-            set_index_multi = SetIndexMulti { array: RegIdx, value: RegIdx };
 
             [basic] get_magic = GetMagic { dest: RegIdx, magic: MagicIdx };
             [basic] set_magic = SetMagic { magic: MagicIdx, source: RegIdx };

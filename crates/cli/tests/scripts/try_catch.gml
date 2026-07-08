@@ -71,43 +71,42 @@ try {
 } catch(_) {}
 assert(val == 4);
 
-var Test = function() constructor {
+var TestErr4 = function() constructor {
     static FOO = 2;
     static BAR = 3;
 
-    // Try-catch blocks are desugared as closures. Since constructors are disallowed in FML, this is
-    // the only way to test the interaction of constructor statics and closures!
     try {
         self.result_add = FOO + BAR;
         try {
             self.result_mult = FOO * BAR;
-        } catch(e) {}
-    } catch(e) {}
+            return;
+        } catch(_) {}
+    } catch(_) {}
 };
 
-var t = new Test();
+var t = new TestErr4();
 assert(t.result_add == 5);
 assert(t.result_mult == 6);
 
-function TestErr4() constructor {
+function TestErr5() constructor {
     function execute() {
         var throw_err = function() {
-            throw "error 4";
+            throw "error 5";
         };
 
-        var err4;
+        var err5;
         try {
             throw_err();
         } catch(e) {
-            err4 = e;
+            err5 = e;
         }
 
-        assert(err4 == "error 4");
+        assert(err5 == "error 5");
         return "execute";
     }
 }
 
-var t4 = new TestErr4();
-assert(t4.execute(4, 5, 6) == "execute");
+var t5 = new TestErr5();
+assert(t5.execute(4, 5, 6) == "execute");
 
 return true;
