@@ -60,6 +60,9 @@ impl fmt::Display for FuncId {
 }
 
 /// The location of an instruction in an IR.
+///
+/// The instruction index may be any value between 0 and `block.instructions.len()` *inclusive*, to
+/// include the final `block.exit` instruction itself.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct InstLocation {
     pub block_id: BlockId,
@@ -239,7 +242,7 @@ impl<S> Variable<S> {
 /// one logical "section" of the IR is operating on this resource at a time.
 ///
 /// There are two kinds of nested scopes: "this" scopes and "call" scopes; "this" scopes guard the
-/// `this` and `other` registers, and "call" scopes guard the stack.
+/// `self` stack, and "call" scopes guard the call stack.
 ///
 /// Nested scopes come with some additional rules:
 ///

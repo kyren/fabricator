@@ -21,6 +21,7 @@ pub enum TokenKind<S> {
     Comma,
 
     Dot,
+    DotDotDot,
 
     Plus,
     Minus,
@@ -140,6 +141,7 @@ impl<S> TokenKind<S> {
             TokenKind::SemiColon => TokenKind::SemiColon,
             TokenKind::Comma => TokenKind::Comma,
             TokenKind::Dot => TokenKind::Dot,
+            TokenKind::DotDotDot => TokenKind::DotDotDot,
             TokenKind::Plus => TokenKind::Plus,
             TokenKind::Minus => TokenKind::Minus,
             TokenKind::Bang => TokenKind::Bang,
@@ -241,6 +243,7 @@ impl<S> TokenKind<S> {
             TokenKind::SemiColon => TokenKind::SemiColon,
             TokenKind::Comma => TokenKind::Comma,
             TokenKind::Dot => TokenKind::Dot,
+            TokenKind::DotDotDot => TokenKind::DotDotDot,
             TokenKind::Plus => TokenKind::Plus,
             TokenKind::Minus => TokenKind::Minus,
             TokenKind::Bang => TokenKind::Bang,
@@ -361,6 +364,8 @@ impl<R, S: PartialEq<R>> PartialEq<TokenKind<R>> for TokenKind<S> {
             (TokenKind::Comma, _) => false,
             (TokenKind::Dot, TokenKind::Dot) => true,
             (TokenKind::Dot, _) => false,
+            (TokenKind::DotDotDot, TokenKind::DotDotDot) => true,
+            (TokenKind::DotDotDot, _) => false,
             (TokenKind::Plus, TokenKind::Plus) => true,
             (TokenKind::Plus, _) => false,
             (TokenKind::Minus, TokenKind::Minus) => true,
