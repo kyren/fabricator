@@ -439,7 +439,21 @@ impl TypesAndEffects {
                             },
                         }
                     }
-                    ir::InstructionKind::OpenCall { .. } => InstructionTypeAndEffects {
+                    ir::InstructionKind::OpenCallScope { .. } => InstructionTypeAndEffects {
+                        output_type: None,
+                        effects: InstructionEffects {
+                            global: StateEffect::Write,
+                            ..InstructionEffects::none()
+                        },
+                    },
+                    ir::InstructionKind::PushStack(_, _) => InstructionTypeAndEffects {
+                        output_type: None,
+                        effects: InstructionEffects {
+                            global: StateEffect::Write,
+                            ..InstructionEffects::none()
+                        },
+                    },
+                    ir::InstructionKind::Call { .. } => InstructionTypeAndEffects {
                         output_type: None,
                         effects: InstructionEffects {
                             variable: VariableEffect::WriteAny,
@@ -448,11 +462,11 @@ impl TypesAndEffects {
                             ..InstructionEffects::none()
                         },
                     },
-                    ir::InstructionKind::FixedReturn(_, _) => InstructionTypeAndEffects {
+                    ir::InstructionKind::GetStack(_, _) => InstructionTypeAndEffects {
                         output_type: Some(InstructionOutputType::Any),
                         effects: InstructionEffects::none(),
                     },
-                    ir::InstructionKind::CloseCall(_) => InstructionTypeAndEffects {
+                    ir::InstructionKind::CloseCallScope(_) => InstructionTypeAndEffects {
                         output_type: None,
                         effects: InstructionEffects {
                             global: StateEffect::Write,
