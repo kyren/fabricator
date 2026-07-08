@@ -105,46 +105,42 @@ pub fn fold_constants<S: Eq + Clone>(ir: &mut ir::Function<S>) {
                         }
                     }
                 }
-                ir::InstructionKind::GetField { object, key } => {
+                ir::InstructionKind::GetField { target, key } => {
                     if let Some(key) = get_constant(key) {
                         new_inst = Some(ir::InstructionKind::GetFieldConst {
-                            object,
+                            target,
                             key: key.clone(),
                         })
                     }
                 }
-                ir::InstructionKind::SetField { object, key, value } => {
+                ir::InstructionKind::SetField { target, key, value } => {
                     if let Some(key) = get_constant(key) {
                         new_inst = Some(ir::InstructionKind::SetFieldConst {
-                            object,
+                            target,
                             key: key.clone(),
                             value,
                         })
                     }
                 }
-                ir::InstructionKind::GetIndex { array, indexes } => {
-                    if indexes.len() == 1 {
-                        if let Some(index) = get_constant(indexes[0]) {
-                            new_inst = Some(ir::InstructionKind::GetIndexConst {
-                                array,
-                                index: index.clone(),
-                            })
-                        }
+                ir::InstructionKind::GetIndex { target, index } => {
+                    if let Some(index) = get_constant(index) {
+                        new_inst = Some(ir::InstructionKind::GetIndexConst {
+                            target,
+                            index: index.clone(),
+                        })
                     }
                 }
                 ir::InstructionKind::SetIndex {
-                    array,
-                    indexes,
+                    target,
+                    index,
                     value,
                 } => {
-                    if indexes.len() == 1 {
-                        if let Some(index) = get_constant(indexes[0]) {
-                            new_inst = Some(ir::InstructionKind::SetIndexConst {
-                                array,
-                                index: index.clone(),
-                                value,
-                            })
-                        }
+                    if let Some(index) = get_constant(index) {
+                        new_inst = Some(ir::InstructionKind::SetIndexConst {
+                            target,
+                            index: index.clone(),
+                            value,
+                        })
                     }
                 }
                 _ => {}
@@ -155,53 +151,48 @@ pub fn fold_constants<S: Eq + Clone>(ir: &mut ir::Function<S>) {
             }
         }
 
-        match block.exit.kind {
-            ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_) => {}
-            ir::ExitKind::Jump(_) => {}
-            ir::ExitKind::Branch {
-                cond,
-                if_false,
-                if_true,
-            } => {
-                let get_constant = |inst_id| {
-                    if let ir::InstructionKind::Constant(c) = &ir.instructions[inst_id].kind {
-                        Some(c)
-                    } else {
-                        None
-                    }
-                };
-
-                let const_cond = match cond {
-                    ir::BranchCondition::IsDefined(a) => get_constant(a).map(|c| !c.is_undefined()),
-                    ir::BranchCondition::IsUndefined(a) => {
-                        get_constant(a).map(|c| c.is_undefined())
-                    }
-                    ir::BranchCondition::IsTrue(a) => get_constant(a).map(|c| c.cast_bool()),
-                    ir::BranchCondition::IsFalse(a) => get_constant(a).map(|c| !c.cast_bool()),
-                    ir::BranchCondition::Equal(a, b) => get_constant(a)
-                        .and_then(|a| Some((a, get_constant(b)?)))
-                        .map(|(a, b)| a.equal(b)),
-                    ir::BranchCondition::NotEqual(a, b) => get_constant(a)
-                        .and_then(|a| Some((a, get_constant(b)?)))
-                        .map(|(a, b)| !a.equal(b)),
-                    ir::BranchCondition::LessThan(a, b) => get_constant(a)
-                        .and_then(|a| Some((a, get_constant(b)?)))
-                        .and_then(|(a, b)| a.less_than(b)),
-                    ir::BranchCondition::LessEqual(a, b) => get_constant(a)
-                        .and_then(|a| Some((a, get_constant(b)?)))
-                        .and_then(|(a, b)| a.less_equal(b)),
-                    ir::BranchCondition::GreaterThan(a, b) => get_constant(a)
-                        .and_then(|a| Some((a, get_constant(b)?)))
-                        .and_then(|(a, b)| b.less_than(a)),
-                    ir::BranchCondition::GreaterEqual(a, b) => get_constant(a)
-                        .and_then(|a| Some((a, get_constant(b)?)))
-                        .and_then(|(a, b)| b.less_equal(a)),
-                };
-
-                if let Some(cond_is_true) = const_cond {
-                    let target = if cond_is_true { if_true } else { if_false };
-                    block.exit.kind = ir::ExitKind::Jump(target);
+        if let ir::ExitKind::Branch {
+            cond,
+            if_false,
+            if_true,
+        } = block.exit.kind
+        {
+            let get_constant = |inst_id| {
+                if let ir::InstructionKind::Constant(c) = &ir.instructions[inst_id].kind {
+                    Some(c)
+                } else {
+                    None
                 }
+            };
+
+            let const_cond = match cond {
+                ir::BranchCondition::IsDefined(a) => get_constant(a).map(|c| !c.is_undefined()),
+                ir::BranchCondition::IsUndefined(a) => get_constant(a).map(|c| c.is_undefined()),
+                ir::BranchCondition::IsTrue(a) => get_constant(a).map(|c| c.cast_bool()),
+                ir::BranchCondition::IsFalse(a) => get_constant(a).map(|c| !c.cast_bool()),
+                ir::BranchCondition::Equal(a, b) => get_constant(a)
+                    .and_then(|a| Some((a, get_constant(b)?)))
+                    .map(|(a, b)| a.equal(b)),
+                ir::BranchCondition::NotEqual(a, b) => get_constant(a)
+                    .and_then(|a| Some((a, get_constant(b)?)))
+                    .map(|(a, b)| !a.equal(b)),
+                ir::BranchCondition::LessThan(a, b) => get_constant(a)
+                    .and_then(|a| Some((a, get_constant(b)?)))
+                    .and_then(|(a, b)| a.less_than(b)),
+                ir::BranchCondition::LessEqual(a, b) => get_constant(a)
+                    .and_then(|a| Some((a, get_constant(b)?)))
+                    .and_then(|(a, b)| a.less_equal(b)),
+                ir::BranchCondition::GreaterThan(a, b) => get_constant(a)
+                    .and_then(|a| Some((a, get_constant(b)?)))
+                    .and_then(|(a, b)| b.less_than(a)),
+                ir::BranchCondition::GreaterEqual(a, b) => get_constant(a)
+                    .and_then(|a| Some((a, get_constant(b)?)))
+                    .and_then(|(a, b)| b.less_equal(a)),
+            };
+
+            if let Some(cond_is_true) = const_cond {
+                let target = if cond_is_true { if_true } else { if_false };
+                block.exit.kind = ir::ExitKind::Jump(target);
             }
         }
     }
