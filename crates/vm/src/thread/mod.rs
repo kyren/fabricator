@@ -5,7 +5,7 @@ mod thread;
 mod vec_end_slice;
 
 pub use self::{
-    dispatch::{ArrayBoundsError, OpError},
+    dispatch::{ArrayBoundsError, IndexError, OpError},
     error::{
         BacktraceFrame, CallError, ClosureBacktraceFrame, ExternBacktraceFrame,
         ExternClosureBacktraceFrame, VmError,

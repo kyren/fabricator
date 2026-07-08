@@ -2,7 +2,7 @@ use std::{collections::hash_map, hash::Hash};
 
 use fabricator_util::typed_id_map::SecondaryMap;
 use fabricator_vm::{
-    self as vm, Span,
+    self as vm,
     instructions::{self, InstIdx, Instruction},
 };
 use rustc_hash::FxHashMap;
@@ -94,61 +94,78 @@ fn codegen_function<S: Clone + Eq + Hash>(
     let mut block_vm_starts = SecondaryMap::<ir::BlockId, usize>::new();
     let mut block_vm_jumps = Vec::new();
 
-    let push_stack_push_insts =
-        |vm_instructions: &mut Vec<(Instruction, Span)>, insts: &[ir::InstId], span: Span| {
-            for chunk in insts.chunks(4) {
-                match chunk.len() {
-                    0 => {}
-                    1 => {
-                        vm_instructions.push((
-                            Instruction::StackPush {
-                                source: reg_alloc.instruction_registers[chunk[0]],
-                            },
-                            span,
-                        ));
-                    }
-                    2 => {
-                        vm_instructions.push((
-                            Instruction::StackPush2 {
-                                source_a: reg_alloc.instruction_registers[chunk[0]],
-                                source_b: reg_alloc.instruction_registers[chunk[1]],
-                            },
-                            span,
-                        ));
-                    }
-                    3 => {
-                        vm_instructions.push((
-                            Instruction::StackPush3 {
-                                source_a: reg_alloc.instruction_registers[chunk[0]],
-                                source_b: reg_alloc.instruction_registers[chunk[1]],
-                                source_c: reg_alloc.instruction_registers[chunk[2]],
-                            },
-                            span,
-                        ));
-                    }
-                    4 => {
-                        vm_instructions.push((
-                            Instruction::StackPush4 {
-                                source_a: reg_alloc.instruction_registers[chunk[0]],
-                                source_b: reg_alloc.instruction_registers[chunk[1]],
-                                source_c: reg_alloc.instruction_registers[chunk[2]],
-                                source_d: reg_alloc.instruction_registers[chunk[3]],
-                            },
-                            span,
-                        ));
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        };
-
     for (order_index, &block_id) in block_order.iter().enumerate() {
         let block = &ir.blocks[block_id];
         block_vm_starts.insert(block_id, vm_instructions.len());
 
-        for (inst_index, &inst_id) in block.instructions.iter().enumerate() {
+        let mut inst_iter = block.instructions.iter().enumerate().peekable();
+
+        while let Some((inst_index, &inst_id)) = inst_iter.next() {
             let inst = &ir.instructions[inst_id];
+
             match inst.kind {
+                ir::InstructionKind::PushStack(first_call_scope, first_source) => {
+                    // Consolidate all consecutive `PushStack` instructions of the same call scope
+                    // into minimal instructions.
+
+                    let mut sources = vec![(first_source, inst.span)];
+                    while let Some(&(_, &inst_id)) = inst_iter.peek() {
+                        let inst = &ir.instructions[inst_id];
+                        let ir::InstructionKind::PushStack(scope, source) = inst.kind else {
+                            break;
+                        };
+                        if scope != first_call_scope {
+                            break;
+                        }
+                        inst_iter.next();
+                        sources.push((source, inst.span));
+                    }
+
+                    for chunk in sources.chunks(4) {
+                        match *chunk {
+                            [] => {}
+                            [(a, aspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush {
+                                        source: reg_alloc.instruction_registers[a],
+                                    },
+                                    aspan,
+                                ));
+                            }
+                            [(a, aspan), (b, bspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush2 {
+                                        source_a: reg_alloc.instruction_registers[a],
+                                        source_b: reg_alloc.instruction_registers[b],
+                                    },
+                                    aspan.combine(bspan),
+                                ));
+                            }
+                            [(a, aspan), (b, bspan), (c, cspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush3 {
+                                        source_a: reg_alloc.instruction_registers[a],
+                                        source_b: reg_alloc.instruction_registers[b],
+                                        source_c: reg_alloc.instruction_registers[c],
+                                    },
+                                    aspan.combine(bspan).combine(cspan),
+                                ));
+                            }
+                            [(a, aspan), (b, bspan), (c, cspan), (d, dspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush4 {
+                                        source_a: reg_alloc.instruction_registers[a],
+                                        source_b: reg_alloc.instruction_registers[b],
+                                        source_c: reg_alloc.instruction_registers[c],
+                                        source_d: reg_alloc.instruction_registers[d],
+                                    },
+                                    aspan.combine(bspan).combine(cspan).combine(dspan),
+                                ));
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
                 ir::InstructionKind::NoOp => {}
                 ir::InstructionKind::Copy(source) => {
                     let dest_reg = reg_alloc.instruction_registers[inst_id];
@@ -331,116 +348,92 @@ fn codegen_function<S: Clone + Eq + Hash>(
                         inst.span,
                     ));
                 }
-                ir::InstructionKind::GetField { object, key } => {
+                ir::InstructionKind::GetField { target, key } => {
                     vm_instructions.push((
                         Instruction::GetField {
                             dest: reg_alloc.instruction_registers[inst_id],
-                            object: reg_alloc.instruction_registers[object],
+                            target: reg_alloc.instruction_registers[target],
                             key: reg_alloc.instruction_registers[key],
                         },
                         inst.span,
                     ));
                 }
-                ir::InstructionKind::SetField { object, key, value } => {
+                ir::InstructionKind::SetField { target, key, value } => {
                     vm_instructions.push((
                         Instruction::SetField {
-                            object: reg_alloc.instruction_registers[object],
+                            target: reg_alloc.instruction_registers[target],
                             key: reg_alloc.instruction_registers[key],
                             value: reg_alloc.instruction_registers[value],
                         },
                         inst.span,
                     ));
                 }
-                ir::InstructionKind::GetFieldConst { object, ref key } => {
+                ir::InstructionKind::GetFieldConst { target, ref key } => {
                     vm_instructions.push((
                         Instruction::GetFieldConst {
                             dest: reg_alloc.instruction_registers[inst_id],
-                            object: reg_alloc.instruction_registers[object],
+                            target: reg_alloc.instruction_registers[target],
                             key: get_const_index(key)?,
                         },
                         inst.span,
                     ));
                 }
                 ir::InstructionKind::SetFieldConst {
-                    object,
+                    target,
                     ref key,
                     value,
                 } => {
                     vm_instructions.push((
                         Instruction::SetFieldConst {
-                            object: reg_alloc.instruction_registers[object],
+                            target: reg_alloc.instruction_registers[target],
                             key: get_const_index(key)?,
                             value: reg_alloc.instruction_registers[value],
                         },
                         inst.span,
                     ));
                 }
-                ir::InstructionKind::GetIndex { array, ref indexes } => {
-                    if indexes.len() == 1 {
-                        vm_instructions.push((
-                            Instruction::GetIndex {
-                                dest: reg_alloc.instruction_registers[inst_id],
-                                array: reg_alloc.instruction_registers[array],
-                                index: reg_alloc.instruction_registers[indexes[0]],
-                            },
-                            inst.span,
-                        ));
-                    } else {
-                        vm_instructions.push((Instruction::PushStackFrame {}, inst.span));
-                        push_stack_push_insts(&mut vm_instructions, indexes, inst.span);
-                        vm_instructions.push((
-                            Instruction::GetIndexMulti {
-                                dest: reg_alloc.instruction_registers[inst_id],
-                                array: reg_alloc.instruction_registers[array],
-                            },
-                            inst.span,
-                        ));
-                    }
+                ir::InstructionKind::GetIndex { target, index } => {
+                    vm_instructions.push((
+                        Instruction::GetIndex {
+                            dest: reg_alloc.instruction_registers[inst_id],
+                            target: reg_alloc.instruction_registers[target],
+                            index: reg_alloc.instruction_registers[index],
+                        },
+                        inst.span,
+                    ));
                 }
                 ir::InstructionKind::SetIndex {
-                    array,
-                    ref indexes,
+                    target,
+                    index,
                     value,
                 } => {
-                    if indexes.len() == 1 {
-                        vm_instructions.push((
-                            Instruction::SetIndex {
-                                array: reg_alloc.instruction_registers[array],
-                                index: reg_alloc.instruction_registers[indexes[0]],
-                                value: reg_alloc.instruction_registers[value],
-                            },
-                            inst.span,
-                        ));
-                    } else {
-                        vm_instructions.push((Instruction::PushStackFrame {}, inst.span));
-                        push_stack_push_insts(&mut vm_instructions, indexes, inst.span);
-                        vm_instructions.push((
-                            Instruction::SetIndexMulti {
-                                array: reg_alloc.instruction_registers[array],
-                                value: reg_alloc.instruction_registers[value],
-                            },
-                            inst.span,
-                        ));
-                    }
+                    vm_instructions.push((
+                        Instruction::SetIndex {
+                            target: reg_alloc.instruction_registers[target],
+                            index: reg_alloc.instruction_registers[index],
+                            value: reg_alloc.instruction_registers[value],
+                        },
+                        inst.span,
+                    ));
                 }
-                ir::InstructionKind::GetIndexConst { array, ref index } => {
+                ir::InstructionKind::GetIndexConst { target, ref index } => {
                     vm_instructions.push((
                         Instruction::GetIndexConst {
                             dest: reg_alloc.instruction_registers[inst_id],
-                            array: reg_alloc.instruction_registers[array],
+                            target: reg_alloc.instruction_registers[target],
                             index: get_const_index(index)?,
                         },
                         inst.span,
                     ));
                 }
                 ir::InstructionKind::SetIndexConst {
-                    array,
+                    target,
                     ref index,
                     value,
                 } => {
                     vm_instructions.push((
                         Instruction::SetIndexConst {
-                            array: reg_alloc.instruction_registers[array],
+                            target: reg_alloc.instruction_registers[target],
                             index: get_const_index(index)?,
                             value: reg_alloc.instruction_registers[value],
                         },
@@ -657,14 +650,25 @@ fn codegen_function<S: Clone + Eq + Hash>(
                         }
                     }
                 }
-                ir::InstructionKind::OpenCall {
+                ir::InstructionKind::OpenCallScope(_) => {
+                    vm_instructions.push((Instruction::PushStackFrame {}, inst.span));
+                }
+                ir::InstructionKind::Call {
                     func,
+                    stack_base,
                     this,
-                    ref args,
                     ..
                 } => {
-                    vm_instructions.push((Instruction::PushStackFrame {}, inst.span));
-                    push_stack_push_insts(&mut vm_instructions, args, inst.span);
+                    if stack_base != 0 {
+                        vm_instructions.push((
+                            Instruction::SplitStackFrame {
+                                base: stack_base
+                                    .try_into()
+                                    .map_err(|_| ProtoGenError::StackIndexOutOfRange)?,
+                            },
+                            inst.span,
+                        ));
+                    }
                     vm_instructions.push((
                         Instruction::Call {
                             func: reg_alloc.instruction_registers[func],
@@ -672,8 +676,11 @@ fn codegen_function<S: Clone + Eq + Hash>(
                         },
                         inst.span,
                     ));
+                    if stack_base != 0 {
+                        vm_instructions.push((Instruction::JoinStackFrame {}, inst.span));
+                    }
                 }
-                ir::InstructionKind::FixedReturn(_, index) => {
+                ir::InstructionKind::GetStack(_, index) => {
                     vm_instructions.push((
                         Instruction::StackGet {
                             dest: reg_alloc.instruction_registers[inst_id],
@@ -684,24 +691,26 @@ fn codegen_function<S: Clone + Eq + Hash>(
                         inst.span,
                     ));
                 }
-                ir::InstructionKind::CloseCall(_) => {
+                ir::InstructionKind::CloseCallScope(_) => {
                     vm_instructions.push((Instruction::PopStackFrame {}, inst.span));
                 }
             }
         }
 
         match block.exit.kind {
-            ir::ExitKind::Return { value } => {
+            ir::ExitKind::Exit => {
                 vm_instructions.push((Instruction::PushStackFrame {}, block.exit.span));
-
-                if let Some(value) = value {
-                    vm_instructions.push((
-                        Instruction::StackPush {
-                            source: reg_alloc.instruction_registers[value],
-                        },
-                        block.exit.span,
-                    ));
-                }
+                vm_instructions.push((Instruction::Return {}, block.exit.span));
+            }
+            ir::ExitKind::Return { stack_base, .. } => {
+                vm_instructions.push((
+                    Instruction::SplitStackFrame {
+                        base: stack_base
+                            .try_into()
+                            .map_err(|_| ProtoGenError::StackIndexOutOfRange)?,
+                    },
+                    block.exit.span,
+                ));
 
                 vm_instructions.push((Instruction::Return {}, block.exit.span));
             }

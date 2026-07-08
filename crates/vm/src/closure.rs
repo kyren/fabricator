@@ -275,53 +275,61 @@ impl<'gc> Prototype<'gc> {
                 Instruction::NewArray { dest } => {
                     mark_reg_idx(dest);
                 }
-                Instruction::GetField { dest, object, key } => {
+                Instruction::GetField { dest, target, key } => {
                     mark_reg_idx(dest);
-                    mark_reg_idx(object);
+                    mark_reg_idx(target);
                     mark_reg_idx(key);
                 }
-                Instruction::SetField { object, key, value } => {
-                    mark_reg_idx(object);
+                Instruction::SetField { target, key, value } => {
+                    mark_reg_idx(target);
                     mark_reg_idx(key);
                     mark_reg_idx(value);
                 }
-                Instruction::GetFieldConst { dest, object, key } => {
+                Instruction::GetFieldConst { dest, target, key } => {
                     mark_reg_idx(dest);
-                    mark_reg_idx(object);
+                    mark_reg_idx(target);
                     verify_const_idx(key)?;
                     verify_const_as_field(key)?;
                 }
-                Instruction::SetFieldConst { object, key, value } => {
-                    mark_reg_idx(object);
+                Instruction::SetFieldConst { target, key, value } => {
+                    mark_reg_idx(target);
                     verify_const_idx(key)?;
                     verify_const_as_field(key)?;
                     mark_reg_idx(value);
                 }
-                Instruction::GetIndex { dest, array, index } => {
+                Instruction::GetIndex {
+                    dest,
+                    target,
+                    index,
+                } => {
                     mark_reg_idx(dest);
-                    mark_reg_idx(array);
+                    mark_reg_idx(target);
                     mark_reg_idx(index);
                 }
                 Instruction::SetIndex {
-                    array,
+                    target,
                     index,
                     value,
                 } => {
-                    mark_reg_idx(array);
+                    mark_reg_idx(target);
                     mark_reg_idx(index);
                     mark_reg_idx(value);
                 }
-                Instruction::GetIndexConst { dest, array, index } => {
+                Instruction::GetIndexConst {
+                    dest,
+                    target,
+                    index,
+                } => {
                     mark_reg_idx(dest);
-                    mark_reg_idx(array);
+                    mark_reg_idx(target);
                     verify_const_idx(index)?;
                 }
                 Instruction::SetIndexConst {
-                    array,
+                    target,
                     index,
                     value,
                 } => {
-                    mark_reg_idx(array);
+                    mark_reg_idx(target);
                     verify_const_idx(index)?;
                     mark_reg_idx(value);
                 }
@@ -396,14 +404,6 @@ impl<'gc> Prototype<'gc> {
                 }
                 Instruction::StackGet { dest, .. } => {
                     mark_reg_idx(dest);
-                }
-                Instruction::GetIndexMulti { dest, array } => {
-                    mark_reg_idx(dest);
-                    mark_reg_idx(array);
-                }
-                Instruction::SetIndexMulti { array, value } => {
-                    mark_reg_idx(array);
-                    mark_reg_idx(value);
                 }
                 Instruction::GetMagic { dest, magic } => {
                     mark_reg_idx(dest);

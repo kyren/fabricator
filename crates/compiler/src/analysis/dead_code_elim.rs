@@ -184,13 +184,14 @@ pub fn eliminate_dead_code<S>(ir: &mut ir::Function<S>) {
             }
         }
 
-        // Any parameter of `Exit::Return` or `Exit::Throw` is always live.
-        if let exit @ (ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_)) =
-            &ir.blocks[block_id].exit.kind
-        {
-            for value in exit.sources() {
-                live_instructions.insert(value.index() as usize);
-                worklist.push(Work::Instruction(value));
+        // Any source of a non-branch exit is always live.
+        match &ir.blocks[block_id].exit.kind {
+            ir::ExitKind::Branch { .. } => {}
+            exit => {
+                for value in exit.sources() {
+                    live_instructions.insert(value.index() as usize);
+                    worklist.push(Work::Instruction(value));
+                }
             }
         }
     }
@@ -220,15 +221,12 @@ pub fn eliminate_dead_code<S>(ir: &mut ir::Function<S>) {
             }
             Work::Branch(block_id) => {
                 let block = &ir.blocks[block_id];
-                match block.exit.kind {
-                    ir::ExitKind::Branch { cond, .. } => {
-                        for inst_id in cond.sources() {
-                            if live_instructions.insert(inst_id.index() as usize) {
-                                worklist.push(Work::Instruction(inst_id));
-                            }
+                if let ir::ExitKind::Branch { cond, .. } = block.exit.kind {
+                    for inst_id in cond.sources() {
+                        if live_instructions.insert(inst_id.index() as usize) {
+                            worklist.push(Work::Instruction(inst_id));
                         }
                     }
-                    _ => {}
                 }
 
                 live_block = block_id;
@@ -259,19 +257,16 @@ pub fn eliminate_dead_code<S>(ir: &mut ir::Function<S>) {
             }
         }
 
-        match block.exit.kind {
-            ir::ExitKind::Branch { if_false, .. } => {
-                if !live_branches.contains(block_id.index() as usize) {
-                    // If this is not a branch that any live instruction is control-flow dependent
-                    // on, then nothing in either successive branch is live (but there may be live
-                    // instructions in future blocks).
-                    //
-                    // In this case, it doesn't matter which branch we take, so just replace it with
-                    // a jump to one of them.
-                    block.exit.kind = ir::ExitKind::Jump(if_false);
-                }
+        if let ir::ExitKind::Branch { if_false, .. } = block.exit.kind {
+            if !live_branches.contains(block_id.index() as usize) {
+                // If this is not a branch that any live instruction is control-flow dependent
+                // on, then nothing in either successive branch is live (but there may be live
+                // instructions in future blocks).
+                //
+                // In this case, it doesn't matter which branch we take, so just replace it with a
+                // jump to one of them.
+                block.exit.kind = ir::ExitKind::Jump(if_false);
             }
-            ir::ExitKind::Return { .. } | ir::ExitKind::Throw(_) | ir::ExitKind::Jump(_) => {}
         }
     }
 }

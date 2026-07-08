@@ -1,13 +1,14 @@
 use gc_arena::{Collect, Mutation, Rootable};
 
 use crate::{
-    RuntimeError,
     callback::Callback,
     closure::Closure,
+    error::RuntimeError,
     interpreter::Context,
     magic::{MagicConstant, MagicSet},
     object::Object,
     registry::Singleton,
+    thread::IndexError,
     user_data::UserDataIter,
     value::{Function, Value},
 };
@@ -29,9 +30,9 @@ pub struct BuiltIns<'gc> {
     ///     field: true,
     /// };
     ///
-    /// let f_rebound = method(t, f);
+    /// let f_rebound = bind(t, f);
     /// ```
-    pub method: Callback<'gc>,
+    pub bind: Callback<'gc>,
 
     /// Call the given function and catch any errors.
     ///
@@ -90,20 +91,37 @@ pub struct BuiltIns<'gc> {
     ///
     /// This is an internal compiler support method.
     pub with_loop_iter: Callback<'gc>,
+
+    /// Get the value at the given index, potentially with multiple index values.
+    ///
+    /// The first parameter is the target and all subsequent parameters are the indexes.
+    ///
+    /// This is an internal compiler support method.
+    pub get_multi_index: Callback<'gc>,
+
+    /// Set the value at the given index, potentially with multiple index values.
+    ///
+    /// The first parameter is the target, the second is the value to set, and all subsequent
+    /// parameters are the indexes.
+    ///
+    /// This is an internal compiler support method.
+    pub set_multi_index: Callback<'gc>,
 }
 
 impl<'gc> BuiltIns<'gc> {
-    pub const METHOD: &'static str = "method";
+    pub const BIND: &'static str = "bind";
     pub const PCALL: &'static str = "pcall";
     pub const GET_SUPER: &'static str = "get_super";
     pub const SET_SUPER: &'static str = "set_super";
     pub const INIT_CONSTRUCTOR_SUPER: &'static str = "__init_constructor_super";
     pub const GET_CONSTRUCTOR_SUPER: &'static str = "__get_constructor_super";
     pub const WITH_LOOP_ITER: &'static str = "__with_loop_iter";
+    pub const GET_MULTI_INDEX: &'static str = "__get_multi_index";
+    pub const SET_MULTI_INDEX: &'static str = "__set_multi_index";
 
     fn new(mc: &Mutation<'gc>) -> Self {
         Self {
-            method: Callback::from_fn(mc, |ctx, mut exec| {
+            bind: Callback::from_fn(mc, |ctx, mut exec| {
                 let (obj, func): (Value, Function) = exec.stack().consume(ctx)?;
 
                 match obj {
@@ -126,7 +144,7 @@ impl<'gc> BuiltIns<'gc> {
             set_super: Callback::from_fn(mc, |ctx, mut exec| {
                 let (obj, parent): (Object, Option<Object>) = exec.stack().consume(ctx)?;
                 obj.set_parent(&ctx, parent)?;
-                exec.stack().replace(ctx, (obj, parent));
+                exec.stack().replace(ctx, obj);
                 Ok(())
             }),
 
@@ -217,6 +235,137 @@ impl<'gc> BuiltIns<'gc> {
                     }
                 })
             },
+
+            get_multi_index: Callback::from_fn(mc, |ctx, mut exec| {
+                let mut stack = exec.stack();
+
+                let (target, indexes) = match &*stack {
+                    [] => (Value::Undefined, [].as_slice()),
+                    [target, indexes @ ..] => (*target, indexes),
+                };
+
+                let value = match target {
+                    Value::Object(target) => {
+                        if indexes.len() == 1 {
+                            let index = indexes[0];
+                            if let Some(index) = index.coerce_string(ctx) {
+                                target.get(index).unwrap_or_default()
+                            } else {
+                                return Err(IndexError::BadIndex {
+                                    target: target.into(),
+                                    index: index.into(),
+                                }
+                                .into());
+                            }
+                        } else {
+                            return Err(IndexError::BadMultiIndex {
+                                target: target.into(),
+                                len: indexes.len(),
+                            }
+                            .into());
+                        }
+                    }
+                    Value::Array(target) => {
+                        if indexes.len() == 1 {
+                            let index = indexes[0];
+                            if let Some(index) =
+                                index.cast_integer().and_then(|i| i.try_into().ok())
+                            {
+                                target.get(index).unwrap_or_default()
+                            } else {
+                                return Err(IndexError::BadIndex {
+                                    target: target.into(),
+                                    index: index.into(),
+                                }
+                                .into());
+                            }
+                        } else {
+                            return Err(IndexError::BadMultiIndex {
+                                target: target.into(),
+                                len: indexes.len(),
+                            }
+                            .into());
+                        }
+                    }
+                    Value::UserData(user_data) => user_data.get_index(ctx, indexes)?,
+                    target => {
+                        return Err(IndexError::NotIndexable {
+                            target: target.into(),
+                        }
+                        .into());
+                    }
+                };
+
+                stack.replace(ctx, value);
+                Ok(())
+            }),
+
+            set_multi_index: Callback::from_fn(mc, |ctx, mut exec| {
+                let mut stack = exec.stack();
+
+                let (target, value, indexes) = match &*stack {
+                    [] => (Value::Undefined, Value::Undefined, [].as_slice()),
+                    [target] => (*target, Value::Undefined, [].as_slice()),
+                    [target, value, indexes @ ..] => (*target, *value, indexes),
+                };
+
+                match target {
+                    Value::Object(target) => {
+                        if indexes.len() == 1 {
+                            let index = indexes[0];
+                            if let Some(index) = index.coerce_string(ctx) {
+                                target.set(&ctx, index, value);
+                            } else {
+                                return Err(IndexError::BadIndex {
+                                    target: target.into(),
+                                    index: index.into(),
+                                }
+                                .into());
+                            }
+                        } else {
+                            return Err(IndexError::BadMultiIndex {
+                                target: target.into(),
+                                len: indexes.len(),
+                            }
+                            .into());
+                        }
+                    }
+                    Value::Array(target) => {
+                        if indexes.len() == 1 {
+                            let index = indexes[0];
+                            if let Some(index) =
+                                index.cast_integer().and_then(|i| i.try_into().ok())
+                            {
+                                target.set(&ctx, index, value);
+                            } else {
+                                return Err(IndexError::BadIndex {
+                                    target: target.into(),
+                                    index: index.into(),
+                                }
+                                .into());
+                            }
+                        } else {
+                            return Err(IndexError::BadMultiIndex {
+                                target: target.into(),
+                                len: indexes.len(),
+                            }
+                            .into());
+                        }
+                    }
+                    Value::UserData(user_data) => {
+                        user_data.set_index(ctx, indexes, value)?;
+                    }
+                    target => {
+                        return Err(IndexError::NotIndexable {
+                            target: target.into(),
+                        }
+                        .into());
+                    }
+                }
+
+                stack.clear();
+                Ok(())
+            }),
         }
     }
 
@@ -229,8 +378,8 @@ impl<'gc> BuiltIns<'gc> {
     /// All magic names are string constants available in [`BuiltIns`].
     pub fn insert_builtins(&self, ctx: Context<'gc>, magic_set: &mut MagicSet<'gc>) {
         magic_set.insert(
-            ctx.intern(Self::METHOD),
-            MagicConstant::new_ptr(&ctx, self.method),
+            ctx.intern(Self::BIND),
+            MagicConstant::new_ptr(&ctx, self.bind),
         );
 
         magic_set.insert(
@@ -261,6 +410,16 @@ impl<'gc> BuiltIns<'gc> {
         magic_set.insert(
             ctx.intern(Self::WITH_LOOP_ITER),
             MagicConstant::new_ptr(&ctx, self.with_loop_iter),
+        );
+
+        magic_set.insert(
+            ctx.intern(Self::GET_MULTI_INDEX),
+            MagicConstant::new_ptr(&ctx, self.get_multi_index),
+        );
+
+        magic_set.insert(
+            ctx.intern(Self::SET_MULTI_INDEX),
+            MagicConstant::new_ptr(&ctx, self.set_multi_index),
         );
     }
 }
