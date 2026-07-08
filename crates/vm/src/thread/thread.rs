@@ -86,7 +86,7 @@ impl<'gc> Thread<'gc> {
         self.exec(ctx, |mut exec| exec.call(ctx, function))
     }
 
-    /// Run a function on this `Thread` with the given value of `this` and discard all return
+    /// Run a function on this `Thread` with the given value of `self` and discard all return
     /// values.
     pub fn run_with(
         self,
@@ -160,21 +160,21 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         Stack::new(&mut self.thread.stack, self.stack_bottom)
     }
 
-    /// Return the current number of *explicitly set* values on the `this` stack.
+    /// Return the current number of *explicitly set* values on the `self` stack.
     ///
     /// There is always implicitly an unlimited number of `ctx.globals()` present below the last
-    /// explicit `this` value.
+    /// explicit `self` value.
     ///
-    /// You can add `1` to this value to get indexes for all of the explicitly set `this` values as
+    /// You can add `1` to this value to get indexes for all of the explicitly set `self` values as
     /// well as one copy of the implicit `ctx.globals()` at the bottom.
     #[inline]
     pub fn this_depth(&self) -> usize {
         self.thread.this.len()
     }
 
-    /// Return the nth `this` value.
+    /// Return the nth `self` value.
     ///
-    /// The 0th `this` value is the topmost one, the 1th `this` value is the current value of
+    /// The 0th `self` value is the topmost one, the 1th `self` value is the current value of
     /// `other`, etc.
     ///
     /// Any value out of range will always return `ctx.globals()`.
@@ -200,9 +200,9 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         }
     }
 
-    /// Return a new execution context with a new `this` value pushed from the one provided.
+    /// Return a new execution context with a new `self` value pushed from the one provided.
     ///
-    /// On drop, the `this` stack will be reset to its previous state.
+    /// On drop, the `self` stack will be reset to its previous state.
     #[inline]
     pub fn with_this(&mut self, this: impl Into<Value<'gc>>) -> Execution<'gc, '_> {
         let this_bottom = self.thread.this.len();
@@ -259,7 +259,7 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         let mut drop_frame = DropCallbackFrame(self.reborrow());
         let mut exec = drop_frame.0.reborrow();
 
-        // Push the callback's bound `this` value if it has one.
+        // Push the callback's bound `self` value if it has one.
         let mut exec = if let this = callback.this()
             && !this.is_undefined()
         {
@@ -571,7 +571,7 @@ impl<'gc> ThreadState<'gc> {
 
             let stack_frame_boundaries_bottom = self.stack_frame_boundaries.len();
 
-            // Push the closure's bound `this` value, if it has one.
+            // Push the closure's bound `self` value, if it has one.
             let this_bottom = self.this.len();
             if let closure_this = closure.this()
                 && !closure_this.is_undefined()
@@ -712,7 +712,7 @@ impl<'gc> ThreadState<'gc> {
                                 let stack_frame_boundaries_bottom =
                                     self.stack_frame_boundaries.len();
 
-                                // Push the closure's bound `this` value or the provided `this` if
+                                // Push the closure's bound `self` value or the provided `self` if
                                 // either is defined.
                                 let this_bottom = self.this.len();
                                 if let this = closure.this().null_coalesce(this)
@@ -754,8 +754,8 @@ impl<'gc> ThreadState<'gc> {
                             Function::Callback(callback) => {
                                 let stack_bottom = frame.stack_bottom + args_bottom;
 
-                                // Push the provided `this` value if the callback does not have
-                                // one bound, otherwise the bound `this` value will be pushed by
+                                // Push the provided `self` value if the callback does not have
+                                // one bound, otherwise the bound `self` value will be pushed by
                                 // `Execution::call_callback`.
                                 let this_bottom = self.this.len();
                                 if !this.is_undefined() && callback.this().is_undefined() {
@@ -786,7 +786,7 @@ impl<'gc> ThreadState<'gc> {
                         self.stack_frame_boundaries
                             .truncate(frame.stack_frame_boundaries_bottom);
 
-                        // Clear any unpopped `this` values.
+                        // Clear any unpopped `self` values.
                         self.this.truncate(frame.this_bottom);
 
                         // Clear the heap values for this frame.

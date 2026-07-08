@@ -18,7 +18,7 @@ macro_rules! make_idx {
         impl IndexType for $name {
             type Index = $ty;
 
-            #[inline]
+            #[inline(always)]
             fn index(&self) -> usize {
                 self.0 as usize
             }
@@ -57,6 +57,7 @@ macro_rules! make_idx {
 }
 
 make_idx!(RegIdx, u8, "R");
+make_idx!(StackIdx, u8, "S");
 make_idx!(ConstIdx, u16, "C");
 make_idx!(HeapIdx, u16, "H");
 make_idx!(ProtoIdx, u16, "P");
@@ -96,23 +97,23 @@ macro_rules! for_each_instruction {
             [basic] globals = Globals { dest: RegIdx };
 
             [basic]
-            /// Push the top value of the `this` stack onto the `this` stack.
+            /// Push the top value of the `self` stack onto the `self` stack.
             push_this = PushThis {};
 
             [basic]
-            /// Pop the top value off of the `this` stack.
+            /// Pop the top value off of the `self` stack.
             pop_this = PopThis {};
 
             [basic]
-            /// Get the value at the top of the `this` stack.
+            /// Get the value at the top of the `self` stack.
             this = This { dest: RegIdx };
 
             [basic]
-            /// Set the value at the top of the `this` stack.
+            /// Set the value at the top of the `self` stack.
             set_this = SetThis { source: RegIdx };
 
             [basic]
-            /// Get the value one under the top of the `this` stack.
+            /// Get the value one under the top of the `self` stack.
             other = Other { dest: RegIdx };
 
             [basic] closure = Closure { dest: RegIdx, proto: ProtoIdx, bind_this: bool };
@@ -124,14 +125,19 @@ macro_rules! for_each_instruction {
             [basic] arg_count = ArgCount { dest: RegIdx };
 
             [basic]
-            /// Get an argument with index from the value in the `index` register and place it in
-            /// the `dest` register.
+            /// Get the argument at the given index and place it in the `dest` register.
             ///
             /// If the argument index is out of range of the current argument list, then the
             /// destination register is set to `Undefined`.
-            get_arg = GetArg { dest: RegIdx, index: RegIdx };
+            arg_get = ArgGet { dest: RegIdx, index: StackIdx };
 
-            [basic] get_arg_const = GetArgConst { dest: RegIdx, index: ConstIdx };
+            [basic]
+            /// Get the argment at the index pointed to by the `index` register and place it in the
+            /// `dest` register.
+            ///
+            /// If the argument index is out of range of the current argument list, then the
+            /// destination register is set to `Undefined`.
+            arg_get_at = ArgGetAt { dest: RegIdx, index: RegIdx };
 
             [basic] new_object = NewObject { dest: RegIdx };
             [basic] new_array = NewArray { dest: RegIdx };
@@ -193,6 +199,10 @@ macro_rules! for_each_instruction {
             join_stack_frame = JoinStackFrame {};
 
             [basic]
+            /// Split the topmost stack frame into a new frame starting at `base`.
+            split_stack_frame = SplitStackFrame { base: StackIdx };
+
+            [basic]
             /// Push a value onto the top of the current stack frame.
             stack_push = StackPush { source: RegIdx };
 
@@ -214,14 +224,12 @@ macro_rules! for_each_instruction {
             };
 
             [basic]
-            /// Get an element of the current stack frame with index from the value in the `index`
-            /// register and place it in the `dest` register.
+            /// Get the element of the current stack frame at the given index and place it in the
+            /// `dest` register.
             ///
             /// If the stack index is out of range of the current stack frame, then the destination
             /// register is set to `Undefined`.
-            stack_get = StackGet { dest: RegIdx, index: RegIdx };
-
-            [basic] stack_get_const = StackGetConst { dest: RegIdx, index: ConstIdx };
+            stack_get = StackGet { dest: RegIdx, index: StackIdx };
 
             [basic]
             /// Get an index from a value with multiple indexes from the topmost stack frame.
@@ -292,11 +300,11 @@ macro_rules! for_each_instruction {
             /// Pops all arguments from the topmost stack frame, then pushes all returns as a new
             /// stack frame.
             ///
-            /// If a `this` object is given then the the provided `this` will be automatically
+            /// If a `self` object is given then the the provided `self` will be automatically
             /// pushed before calling and popped after returning, with one exception: If the
-            /// `func` object is a function with its own bound `this` value, the provided `this`
+            /// `func` object is a function with its own bound `self` value, the provided `self`
             /// object will be *ignored*. This is the only way to perform this operation without
-            /// potentially pushing two `this` values.
+            /// potentially pushing two `self` values.
             call = Call { func: RegIdx, this: Option<RegIdx> };
 
             [control]

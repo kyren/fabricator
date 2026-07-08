@@ -18,18 +18,18 @@ use crate::{
 #[derive(Collect)]
 #[collect(no_drop)]
 pub struct BuiltIns<'gc> {
-    /// Rebind the implicit `this` on a callback or closure.
+    /// Rebind the implicit `self` on a callback or closure.
     ///
     /// ```fml
-    /// var f = function() {
+    /// let f = function() {
     ///     return self.field;
     /// };
     ///
-    /// var t = {
+    /// let t = {
     ///     field: true,
     /// };
     ///
-    /// var f_rebound = method(t, f);
+    /// let f_rebound = method(t, f);
     /// ```
     pub method: Callback<'gc>,
 
@@ -44,7 +44,7 @@ pub struct BuiltIns<'gc> {
     /// If there is an error executing the given function, returns `false` followed by the error.
     ///
     /// ```fml
-    /// var success, err = pcall(function() {
+    /// let success, err = pcall(function() {
     ///     throw "my_error";
     /// });
     ///
@@ -59,11 +59,11 @@ pub struct BuiltIns<'gc> {
     /// Give an object a new parent (super).
     ///
     /// ```fml
-    /// var obj = {
+    /// let obj = {
     ///     a: 1,
     /// };
     ///
-    /// var parent = {
+    /// let parent = {
     ///     b: 2,
     /// };
     ///
