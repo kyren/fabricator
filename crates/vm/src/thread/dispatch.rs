@@ -7,7 +7,7 @@ use crate::{
     array::Array,
     closure::{Closure, Constant, HeapVar, HeapVarDescriptor},
     error::{Error, ExternValue, RuntimeError, ScriptError},
-    instructions::{self, ConstIdx, HeapIdx, IndexType as _, MagicIdx, ProtoIdx, RegIdx},
+    instructions::{self, ConstIdx, HeapIdx, IndexType as _, MagicIdx, ProtoIdx, RegIdx, StackIdx},
     interpreter::Context,
     object::Object,
     string::String,
@@ -47,8 +47,8 @@ pub enum OpError {
     BadCall { target: &'static str },
     #[error("bad index value {index}")]
     BadIndexValue { index: ExternValue },
-    #[error("no topmost stack frame in {op}")]
-    NoStackFrame { op: &'static str },
+    #[error("not enough stack frames in {op:?}")]
+    InvalidStackFrames { op: &'static str },
 }
 
 #[derive(Debug, Error)]
@@ -382,7 +382,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             }
         }
 
-        // Inner closures bind the current `this` value if the `bind_this` flag is set, otherwise
+        // Inner closures bind the current `self` value if the `bind_this` flag is set, otherwise
         // they are created unbound.
         self.registers[dest.index()] = Closure::from_parts(
             &self.ctx,
@@ -411,17 +411,9 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     }
 
     #[inline]
-    fn get_arg(&mut self, dest: RegIdx, index: RegIdx) -> Result<(), Self::Error> {
-        let arg_idx = self.registers[index.index()];
-        let arg_idx: usize = arg_idx
-            .as_integer()
-            .and_then(|i| i.try_into().ok())
-            .ok_or_else(|| OpError::BadIndexValue {
-                index: arg_idx.into(),
-            })?;
-
-        self.registers[dest.index()] = if arg_idx < self.get_arg_count() {
-            self.stack[arg_idx]
+    fn arg_get(&mut self, dest: RegIdx, index: StackIdx) -> Result<(), Self::Error> {
+        self.registers[dest.index()] = if index.index() < self.get_arg_count() {
+            self.stack[index.index()]
         } else {
             Value::Undefined
         };
@@ -429,13 +421,14 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     }
 
     #[inline]
-    fn get_arg_const(&mut self, dest: RegIdx, index: ConstIdx) -> Result<(), Self::Error> {
-        let arg_idx = self.closure.prototype().constants()[index.index()];
+    fn arg_get_at(&mut self, dest: RegIdx, index: RegIdx) -> Result<(), Self::Error> {
+        let arg_idx = self.registers[index.index()];
         let arg_idx: usize = arg_idx
-            .to_value()
             .as_integer()
             .and_then(|i| i.try_into().ok())
-            .expect("const index is not convertible to usize");
+            .ok_or_else(|| OpError::BadIndexValue {
+                index: arg_idx.into(),
+            })?;
 
         self.registers[dest.index()] = if arg_idx < self.get_arg_count() {
             self.stack[arg_idx]
@@ -930,7 +923,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             self.stack.truncate(boundary);
             Ok(())
         } else {
-            Err(OpError::NoStackFrame {
+            Err(OpError::InvalidStackFrames {
                 op: "pop_stack_frame",
             }
             .into())
@@ -940,7 +933,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     #[inline]
     fn join_stack_frame(&mut self) -> Result<(), Self::Error> {
         if self.stack_frame_boundaries.len() < 2 {
-            Err(OpError::NoStackFrame {
+            Err(OpError::InvalidStackFrames {
                 op: "join_stack_frame",
             }
             .into())
@@ -951,9 +944,23 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     }
 
     #[inline]
+    fn split_stack_frame(&mut self, base: StackIdx) -> Result<(), Self::Error> {
+        if let Some(&boundary) = self.stack_frame_boundaries.last() {
+            self.stack_frame_boundaries
+                .push_back(boundary + base.index());
+            Ok(())
+        } else {
+            Err(OpError::InvalidStackFrames {
+                op: "split_stack_frame",
+            }
+            .into())
+        }
+    }
+
+    #[inline]
     fn stack_push(&mut self, source: RegIdx) -> Result<(), Self::Error> {
         if self.stack_frame_boundaries.is_empty() {
-            return Err(OpError::NoStackFrame { op: "stack_push" }.into());
+            return Err(OpError::InvalidStackFrames { op: "stack_push" }.into());
         }
         self.stack.push_back(self.registers[source.index()]);
         Ok(())
@@ -962,7 +969,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     #[inline]
     fn stack_push_2(&mut self, source_a: RegIdx, source_b: RegIdx) -> Result<(), Self::Error> {
         if self.stack_frame_boundaries.is_empty() {
-            return Err(OpError::NoStackFrame { op: "stack_push" }.into());
+            return Err(OpError::InvalidStackFrames { op: "stack_push" }.into());
         }
         self.stack.extend([
             self.registers[source_a.index()],
@@ -979,7 +986,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         source_c: RegIdx,
     ) -> Result<(), Self::Error> {
         if self.stack_frame_boundaries.is_empty() {
-            return Err(OpError::NoStackFrame { op: "stack_push" }.into());
+            return Err(OpError::InvalidStackFrames { op: "stack_push" }.into());
         }
         self.stack.extend([
             self.registers[source_a.index()],
@@ -998,7 +1005,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         source_d: RegIdx,
     ) -> Result<(), Self::Error> {
         if self.stack_frame_boundaries.is_empty() {
-            return Err(OpError::NoStackFrame { op: "stack_push" }.into());
+            return Err(OpError::InvalidStackFrames { op: "stack_push" }.into());
         }
         self.stack.extend([
             self.registers[source_a.index()],
@@ -1010,51 +1017,17 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     }
 
     #[inline]
-    fn stack_get(&mut self, dest: RegIdx, index: RegIdx) -> Result<(), Self::Error> {
-        let stack_frame_start = self
-            .stack_frame_boundaries
-            .last()
-            .copied()
-            .ok_or_else(|| OpError::NoStackFrame { op: "stack_get" })?;
-
-        let stack_idx = self.registers[index.index()];
-        let stack_idx: usize = stack_idx
-            .as_integer()
-            .and_then(|i| i.try_into().ok())
-            .ok_or_else(|| OpError::BadIndexValue {
-                index: stack_idx.into(),
-            })?;
+    fn stack_get(&mut self, dest: RegIdx, index: StackIdx) -> Result<(), Self::Error> {
+        let stack_frame_start = self.stack_frame_boundaries.last().copied().ok_or_else(|| {
+            OpError::InvalidStackFrames {
+                op: "stack_get_const",
+            }
+        })?;
 
         self.registers[dest.index()] = self
             .stack
             .sub_slice(stack_frame_start)
-            .get(stack_idx)
-            .copied()
-            .unwrap_or_default();
-        Ok(())
-    }
-
-    #[inline]
-    fn stack_get_const(&mut self, dest: RegIdx, index: ConstIdx) -> Result<(), Self::Error> {
-        let stack_frame_start =
-            self.stack_frame_boundaries
-                .last()
-                .copied()
-                .ok_or_else(|| OpError::NoStackFrame {
-                    op: "stack_get_const",
-                })?;
-
-        let stack_idx = self.closure.prototype().constants()[index.index()];
-        let stack_idx: usize = stack_idx
-            .to_value()
-            .as_integer()
-            .and_then(|i| i.try_into().ok())
-            .expect("const index is not convertible to usize");
-
-        self.registers[dest.index()] = self
-            .stack
-            .sub_slice(stack_frame_start)
-            .get(stack_idx)
+            .get(index.index())
             .copied()
             .unwrap_or_default();
         Ok(())
@@ -1065,7 +1038,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         let stack_frame_start =
             self.stack_frame_boundaries
                 .pop_back()
-                .ok_or_else(|| OpError::NoStackFrame {
+                .ok_or_else(|| OpError::InvalidStackFrames {
                     op: "get_index_multi",
                 })?;
 
@@ -1084,7 +1057,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         let stack_frame_start =
             self.stack_frame_boundaries
                 .pop_back()
-                .ok_or_else(|| OpError::NoStackFrame {
+                .ok_or_else(|| OpError::InvalidStackFrames {
                     op: "set_index_multi",
                 })?;
 
@@ -1188,7 +1161,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             .stack_frame_boundaries
             .last()
             .copied()
-            .ok_or_else(|| OpError::NoStackFrame { op: "call" })?;
+            .ok_or_else(|| OpError::InvalidStackFrames { op: "call" })?;
 
         let this = this.map(|r| self.registers[r.index()]).unwrap_or_default();
 
@@ -1204,7 +1177,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         let stack_frame_start = self
             .stack_frame_boundaries
             .pop_back()
-            .ok_or_else(|| OpError::NoStackFrame { op: "return" })?;
+            .ok_or_else(|| OpError::InvalidStackFrames { op: "return" })?;
 
         Ok(ControlFlow::Break(Next::Return {
             returns_bottom: stack_frame_start,
