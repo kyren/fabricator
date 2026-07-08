@@ -155,6 +155,10 @@ where
                 self.advance(3);
                 TokenKind::DoubleQuestionMarkEqual
             }
+            (Some('.'), Some('.'), Some('.')) => {
+                self.advance(3);
+                TokenKind::DotDotDot
+            }
             (Some('!'), Some('='), _) => {
                 self.advance(2);
                 TokenKind::BangEqual

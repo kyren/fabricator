@@ -10,7 +10,8 @@ use thiserror::Error;
 use crate::{
     debug::Span,
     instructions::instruction::{
-        ConstIdx, HeapIdx, InstIdx, Instruction, MagicIdx, ProtoIdx, RegIdx, for_each_instruction,
+        ConstIdx, HeapIdx, InstIdx, Instruction, MagicIdx, ProtoIdx, RegIdx, StackIdx,
+        for_each_instruction,
     },
 };
 

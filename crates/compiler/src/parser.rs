@@ -1539,6 +1539,7 @@ fn token_indicator<S>(t: &TokenKind<S>) -> &'static str {
         TokenKind::SemiColon => ";",
         TokenKind::Comma => ",",
         TokenKind::Dot => ".",
+        TokenKind::DotDotDot => "...",
         TokenKind::Plus => "+",
         TokenKind::Minus => "-",
         TokenKind::Bang => "!",

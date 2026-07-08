@@ -202,6 +202,7 @@ macro_rules! make_idx {
 }
 
 make_idx!(RegIdx, u8);
+make_idx!(StackIdx, u8);
 make_idx!(ConstIdx, u16);
 make_idx!(HeapIdx, u16);
 make_idx!(ProtoIdx, u16);

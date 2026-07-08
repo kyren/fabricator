@@ -114,7 +114,7 @@ pub fn script_execute<'gc>(
     // even if it is a bound method.
     if !func.this().is_undefined() {
         // NOTE: This allocates, to avoid this we could add a feature to call closures and
-        // callbacks while ignoring any bound `this`.
+        // callbacks while ignoring any bound `self`.
         func = func.rebind(&ctx, vm::Value::Undefined);
     }
     exec.with_stack_bottom(1).call(ctx, func)?;
