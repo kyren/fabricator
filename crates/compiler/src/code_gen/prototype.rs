@@ -12,6 +12,18 @@ pub enum HeapVarDescriptor<S> {
 }
 
 impl<S> HeapVarDescriptor<S> {
+    #[must_use]
+    pub fn as_string_ref(&self) -> HeapVarDescriptor<&S> {
+        match *self {
+            HeapVarDescriptor::Owned(idx) => HeapVarDescriptor::Owned(idx),
+            HeapVarDescriptor::Static(ref constant) => {
+                HeapVarDescriptor::Static(constant.as_string_ref())
+            }
+            HeapVarDescriptor::UpValue(idx) => HeapVarDescriptor::UpValue(idx),
+        }
+    }
+
+    #[must_use]
     pub fn map_string<S2>(self, map: impl Fn(S) -> S2) -> HeapVarDescriptor<S2> {
         match self {
             HeapVarDescriptor::Owned(idx) => HeapVarDescriptor::Owned(idx),
@@ -30,7 +42,7 @@ impl<S> HeapVarDescriptor<S> {
 #[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
 pub struct Prototype<S> {
-    pub reference: vm::FunctionRef,
+    pub reference: vm::FunctionRef<S>,
     pub bytecode: vm::ByteCode,
     pub constants: Box<[Constant<S>]>,
     pub prototypes: Box<[Prototype<S>]>,
@@ -47,6 +59,7 @@ impl<S> Prototype<S> {
             heap_vars,
         } = self;
 
+        let reference = reference.map_string(&map);
         let constants = constants.into_iter().map(|c| c.map_string(&map)).collect();
         let prototypes = prototypes.into_iter().map(|p| p.map_string(&map)).collect();
         let heap_vars = heap_vars.into_iter().map(|h| h.map_string(&map)).collect();
@@ -87,6 +100,7 @@ impl<'gc> Prototype<vm::String<'gc>> {
             heap_vars,
         } = self;
 
+        let reference = reference.map_string(|s| s.as_shared().clone());
         let constants = constants.into_iter().map(const_conv).collect();
 
         let prototypes = prototypes
