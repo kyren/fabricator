@@ -42,6 +42,12 @@ impl ops::Deref for SharedStr {
     }
 }
 
+impl AsRef<str> for SharedStr {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl SharedStr {
     pub fn new(name: impl Into<Arc<str>>) -> Self {
         Self(name.into())

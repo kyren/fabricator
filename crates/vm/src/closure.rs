@@ -11,7 +11,7 @@ use crate::{
     },
     magic::MagicSet,
     object::Object,
-    string::String,
+    string::{SharedStr, String},
     value::Value,
 };
 
@@ -98,7 +98,7 @@ pub enum PrototypeVerificationError {
 #[collect(no_drop)]
 pub struct Prototype<'gc> {
     chunk: Chunk<'gc>,
-    reference: FunctionRef,
+    reference: FunctionRef<SharedStr>,
     magic: Gc<'gc, MagicSet<'gc>>,
     bytecode: Gc<'gc, ByteCode>,
     constants: Box<[Constant<'gc>]>,
@@ -114,7 +114,7 @@ impl<'gc> Prototype<'gc> {
     pub fn new(
         mc: &Mutation<'gc>,
         chunk: Chunk<'gc>,
-        reference: FunctionRef,
+        reference: FunctionRef<SharedStr>,
         magic: Gc<'gc, MagicSet<'gc>>,
         bytecode: Gc<'gc, ByteCode>,
         constants: Box<[Constant<'gc>]>,
@@ -472,13 +472,13 @@ impl<'gc> Prototype<'gc> {
     }
 
     #[inline]
-    pub fn reference(&self) -> &FunctionRef {
+    pub fn reference(&self) -> &FunctionRef<SharedStr> {
         &self.reference
     }
 
     #[inline]
-    pub fn identifier(&self) -> FunctionIdentifier {
-        self.chunk.function_identifier(self.reference.clone())
+    pub fn identifier(&self) -> FunctionIdentifier<&str> {
+        self.chunk.function_identifier(&self.reference)
     }
 
     #[inline]
