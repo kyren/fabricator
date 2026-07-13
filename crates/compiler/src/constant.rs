@@ -268,6 +268,7 @@ impl<S> Constant<S> {
         if self.is_undefined() { other } else { self }
     }
 
+    #[must_use]
     pub fn as_string_ref(&self) -> Constant<&S> {
         match self {
             Constant::Undefined => Constant::Undefined,
@@ -278,6 +279,7 @@ impl<S> Constant<S> {
         }
     }
 
+    #[must_use]
     pub fn map_string<S2>(self, map: impl Fn(S) -> S2) -> Constant<S2> {
         match self {
             Constant::Undefined => Constant::Undefined,

@@ -250,20 +250,26 @@ impl<'gc> Chunk<'gc> {
 
     /// Returns a printable identifier for a function within a chunk.
     #[must_use]
-    pub fn function_identifier(self, reference: FunctionRef) -> FunctionIdentifier {
+    pub fn function_identifier<'a, S: AsRef<str>>(
+        self,
+        reference: &'a FunctionRef<S>,
+    ) -> FunctionIdentifier<&'a str>
+    where
+        'gc: 'a,
+    {
         match reference {
             FunctionRef::Named(ref_name, span) => FunctionIdentifier {
-                chunk_name: self.name().clone(),
+                chunk_name: self.name().as_str(),
                 line_number: Some(self.line_number(span.start())),
-                function_ref_name: Some(ref_name),
+                function_ref_name: Some(ref_name.as_ref()),
             },
             FunctionRef::Expression(span) => FunctionIdentifier {
-                chunk_name: self.name().clone(),
+                chunk_name: self.name().as_str(),
                 line_number: Some(self.line_number(span.start())),
                 function_ref_name: None,
             },
             FunctionRef::Chunk => FunctionIdentifier {
-                chunk_name: self.name().clone(),
+                chunk_name: self.name().as_str(),
                 line_number: None,
                 function_ref_name: None,
             },
@@ -273,17 +279,17 @@ impl<'gc> Chunk<'gc> {
 
 /// The source origination of a prototype within some chunk.
 #[derive(Debug, Clone, Collect)]
-#[collect(require_static)]
-pub enum FunctionRef {
+#[collect(no_drop)]
+pub enum FunctionRef<S> {
     // The function has a name from a declaration statement and the span is of the statement.
-    Named(SharedStr, Span),
+    Named(S, Span),
     // The function is an anonymous expression and the span is of the expression.
     Expression(Span),
     // The function is top-level and represents execution of an entire chunk.
     Chunk,
 }
 
-impl FunctionRef {
+impl<S> FunctionRef<S> {
     #[must_use]
     pub fn span(&self) -> Span {
         match *self {
@@ -292,20 +298,39 @@ impl FunctionRef {
             FunctionRef::Chunk => Span::everywhere(),
         }
     }
+
+    #[must_use]
+    pub fn as_string_ref(&self) -> FunctionRef<&S> {
+        match *self {
+            FunctionRef::Named(ref name, span) => FunctionRef::Named(name, span),
+            FunctionRef::Expression(span) => FunctionRef::Expression(span),
+            FunctionRef::Chunk => FunctionRef::Chunk,
+        }
+    }
+
+    #[must_use]
+    pub fn map_string<S2>(self, map: impl Fn(S) -> S2) -> FunctionRef<S2> {
+        match self {
+            FunctionRef::Named(name, span) => FunctionRef::Named(map(name), span),
+            FunctionRef::Expression(span) => FunctionRef::Expression(span),
+            FunctionRef::Chunk => FunctionRef::Chunk,
+        }
+    }
 }
 
-pub struct FunctionIdentifier {
-    chunk_name: SharedStr,
+pub struct FunctionIdentifier<S> {
+    chunk_name: S,
     line_number: Option<LineNumber>,
-    function_ref_name: Option<SharedStr>,
+    function_ref_name: Option<S>,
 }
 
-impl fmt::Display for FunctionIdentifier {
+impl<S: AsRef<str>> fmt::Display for FunctionIdentifier<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let chunk_name = &self.chunk_name;
-        match (&self.function_ref_name, &self.line_number) {
+        let chunk_name = self.chunk_name.as_ref();
+        match (&self.line_number, &self.function_ref_name) {
             (Some(line_number), Some(function_ref_name)) => {
-                write!(f, "{chunk_name}:{function_ref_name}:{line_number}")
+                let function_ref_name = function_ref_name.as_ref();
+                write!(f, "{chunk_name}:{line_number}:{function_ref_name}")
             }
             (Some(line_number), None) => write!(f, "{chunk_name}:{line_number}"),
             _ => write!(f, "{chunk_name}"),

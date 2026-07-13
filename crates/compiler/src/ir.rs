@@ -634,7 +634,7 @@ pub type FunctionMap<S> = IdMap<FuncId, Function<S>>;
 
 #[derive(Clone)]
 pub struct Function<S> {
-    pub reference: FunctionRef,
+    pub reference: FunctionRef<S>,
     pub num_parameters: usize,
 
     pub instructions: InstructionMap<S>,
@@ -846,7 +846,11 @@ impl<S: AsRef<str>> Function<S> {
         };
 
         write_indent(f, 0)?;
-        writeln!(f, "reference: {:?}", self.reference)?;
+        writeln!(
+            f,
+            "reference: {:?}",
+            self.reference.as_string_ref().map_string(|s| s.as_ref())
+        )?;
 
         write_indent(f, 0)?;
         writeln!(f, "start_block({})", self.start_block)?;

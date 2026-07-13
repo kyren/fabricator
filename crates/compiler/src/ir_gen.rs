@@ -1,6 +1,6 @@
 use std::{array, collections::hash_map, hash::Hash};
 
-use fabricator_vm::{BuiltIns, FunctionRef, SharedStr, Span};
+use fabricator_vm::{BuiltIns, FunctionRef, Span};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
@@ -162,7 +162,7 @@ impl IrGenSettings {
         var_dict: &dyn VarDict<S>,
     ) -> Result<ir::Function<S>, IrGenError>
     where
-        S: Eq + Hash + Clone + AsRef<str>,
+        S: Eq + Hash + Clone,
     {
         let mut compiler = FunctionCompiler::new(self, interner, FunctionRef::Chunk, var_dict);
         compiler.block(block)?;
@@ -176,12 +176,12 @@ impl IrGenSettings {
         var_dict: &dyn VarDict<S>,
     ) -> Result<ir::Function<S>, IrGenError>
     where
-        S: Eq + Hash + Clone + AsRef<str>,
+        S: Eq + Hash + Clone,
     {
         let mut compiler = FunctionCompiler::new(
             self,
             interner,
-            FunctionRef::Named(SharedStr::new(func_stmt.name.as_ref()), func_stmt.span),
+            FunctionRef::Named(func_stmt.name.inner.clone(), func_stmt.span),
             var_dict,
         );
         compiler.declare_parameters(&func_stmt.parameters)?;
@@ -420,12 +420,12 @@ impl CallTarget {
 
 impl<'a, S> FunctionCompiler<'a, S>
 where
-    S: Eq + Hash + Clone + AsRef<str>,
+    S: Eq + Hash + Clone,
 {
     fn new(
         settings: IrGenSettings,
         interner: &'a mut dyn StringInterner<String = S>,
-        reference: FunctionRef,
+        reference: FunctionRef<S>,
         var_dict: &'a dyn VarDict<S>,
     ) -> Self {
         let instructions = ir::InstructionMap::new();
@@ -774,7 +774,7 @@ where
 
                 let allow_constructors = self.settings.allow_constructors;
                 let mut compiler = self.start_inner_function(
-                    FunctionRef::Named(SharedStr::new(func_stmt.name.as_ref()), func_stmt.span),
+                    FunctionRef::Named(func_stmt.name.inner.clone(), func_stmt.span),
                     false,
                 );
 
@@ -819,10 +819,7 @@ where
             }
             ast::Statement::Closure(closure_stmt) => {
                 let mut compiler = self.start_inner_function(
-                    FunctionRef::Named(
-                        SharedStr::new(closure_stmt.name.as_ref()),
-                        closure_stmt.span,
-                    ),
+                    FunctionRef::Named(closure_stmt.name.inner.clone(), closure_stmt.span),
                     true,
                 );
 
@@ -2906,7 +2903,7 @@ where
 
     fn start_inner_function(
         &mut self,
-        reference: FunctionRef,
+        reference: FunctionRef<S>,
         capture_outer: bool,
     ) -> FunctionCompiler<'_, S> {
         let mut compiler =
