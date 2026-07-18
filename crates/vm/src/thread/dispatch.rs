@@ -993,6 +993,24 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         Ok(())
     }
 
+    fn stack_push_args(&mut self, first_index: StackIdx) -> Result<(), Self::Error> {
+        if self.stack_frame_boundaries.is_empty() {
+            return Err(OpError::InvalidStackFrames {
+                op: "stack_push_args",
+            }
+            .into());
+        }
+
+        let arg_count = self.get_arg_count();
+        if first_index.index() >= arg_count {
+            return Ok(());
+        }
+
+        self.stack
+            .extend_from_within(first_index.index()..arg_count);
+        Ok(())
+    }
+
     #[inline]
     fn stack_get(&mut self, dest: RegIdx, index: StackIdx) -> Result<(), Self::Error> {
         let stack_frame_start = self.stack_frame_boundaries.last().copied().ok_or_else(|| {

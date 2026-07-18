@@ -12,7 +12,7 @@ use std::{
 /// each stack.
 #[derive(Debug)]
 pub struct VecEndSlice<'a, T> {
-    values: &'a mut Vec<T>,
+    inner: &'a mut Vec<T>,
     bottom: usize,
 }
 
@@ -25,13 +25,16 @@ impl<'a, T> VecEndSlice<'a, T> {
             "slice bottom {bottom} is greater than vec len {}",
             values.len()
         );
-        Self { values, bottom }
+        Self {
+            inner: values,
+            bottom,
+        }
     }
 
     /// Return an immutable slice of the values *below* the current bottom.
     #[inline]
     pub fn below(&self) -> &[T] {
-        &self.values[0..self.bottom]
+        &self.inner[0..self.bottom]
     }
 
     #[inline]
@@ -42,26 +45,26 @@ impl<'a, T> VecEndSlice<'a, T> {
     #[track_caller]
     #[inline]
     pub fn sub_slice(&mut self, bottom: usize) -> VecEndSlice<'_, T> {
-        let len = self.values.len() - self.bottom;
+        let len = self.inner.len() - self.bottom;
         assert!(
             bottom <= len,
             "sub-slice bottom {bottom} is greater than slice len {len}"
         );
         VecEndSlice {
-            values: self.values,
+            inner: self.inner,
             bottom: self.bottom + bottom,
         }
     }
 
     #[inline]
     pub fn push_back(&mut self, value: T) {
-        self.values.push(value);
+        self.inner.push(value);
     }
 
     #[inline]
     pub fn pop_back(&mut self) -> Option<T> {
-        if self.values.len() > self.bottom {
-            Some(self.values.pop().unwrap())
+        if self.inner.len() > self.bottom {
+            Some(self.inner.pop().unwrap())
         } else {
             None
         }
@@ -69,7 +72,7 @@ impl<'a, T> VecEndSlice<'a, T> {
 
     #[inline]
     pub fn clear(&mut self) {
-        self.values.truncate(self.bottom);
+        self.inner.truncate(self.bottom);
     }
 
     #[track_caller]
@@ -78,7 +81,7 @@ impl<'a, T> VecEndSlice<'a, T> {
     where
         T: Clone,
     {
-        self.values.resize(
+        self.inner.resize(
             self.bottom
                 .checked_add(size)
                 .expect("size overflow in `VecEndSlice::resize`"),
@@ -88,23 +91,23 @@ impl<'a, T> VecEndSlice<'a, T> {
 
     #[inline]
     pub fn truncate(&mut self, size: usize) {
-        self.values.truncate(self.bottom.saturating_add(size));
+        self.inner.truncate(self.bottom.saturating_add(size));
     }
 
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
-        self.values.reserve(additional);
+        self.inner.reserve(additional);
     }
 
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.values.capacity() - self.bottom
+        self.inner.capacity() - self.bottom
     }
 
     #[track_caller]
     #[inline]
     pub fn remove(&mut self, index: usize) -> T {
-        self.values.remove(
+        self.inner.remove(
             self.bottom
                 .checked_add(index)
                 .expect("size overflow in `VecEndSlice::remove`"),
@@ -118,7 +121,25 @@ impl<'a, T> VecEndSlice<'a, T> {
             bound => bound.map(|&r| self.bottom.saturating_add(r)),
         };
         let end = range.end_bound().map(|&r| self.bottom.saturating_add(r));
-        self.values.drain((start, end))
+        self.inner.drain((start, end))
+    }
+
+    #[track_caller]
+    #[inline]
+    pub fn extend_from_within<R: RangeBounds<usize>>(&mut self, range: R)
+    where
+        T: Clone,
+    {
+        const EXPECT_MSG: &str = "size overflow in `VecEndSlice::extend_from_within`";
+
+        let start = match range.start_bound() {
+            Bound::Unbounded => Bound::Included(self.bottom),
+            bound => bound.map(|&r| self.bottom.checked_add(r).expect(EXPECT_MSG)),
+        };
+        let end = range
+            .end_bound()
+            .map(|&r| self.bottom.checked_add(r).expect(EXPECT_MSG));
+        self.inner.extend_from_within((start, end));
     }
 }
 
@@ -126,26 +147,26 @@ impl<'a, T> ops::Deref for VecEndSlice<'a, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.values[self.bottom..]
+        &self.inner[self.bottom..]
     }
 }
 
 impl<'a, T> ops::DerefMut for VecEndSlice<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.values[self.bottom..]
+        &mut self.inner[self.bottom..]
     }
 }
 
 impl<'a, T> Extend<T> for VecEndSlice<'a, T> {
     #[inline]
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        self.values.extend(iter);
+        self.inner.extend(iter);
     }
 }
 
 impl<'a, T: Copy> Extend<&'a T> for VecEndSlice<'a, T> {
     #[inline]
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
-        self.values.extend(iter);
+        self.inner.extend(iter);
     }
 }
