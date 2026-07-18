@@ -3,9 +3,11 @@
 // In practice, this simply means that every declared static variable exists exactly once in the
 // program.
 function static_test_1() {
-    static let a_static = black_box(0);
-    a_static += 1;
-    return a_static;
+    {
+        static let a_static = black_box(0);
+        a_static += 1;
+        return a_static;
+    }
 }
 
 assert(static_test_1() == 1);

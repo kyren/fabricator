@@ -402,6 +402,7 @@ impl<'gc> Prototype<'gc> {
                     mark_reg_idx(source_c);
                     mark_reg_idx(source_d);
                 }
+                Instruction::StackPushArgs { .. } => {}
                 Instruction::StackGet { dest, .. } => {
                     mark_reg_idx(dest);
                 }

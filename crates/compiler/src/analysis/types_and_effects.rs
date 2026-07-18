@@ -446,7 +446,14 @@ impl TypesAndEffects {
                             ..InstructionEffects::none()
                         },
                     },
-                    ir::InstructionKind::PushStack(_, _) => InstructionTypeAndEffects {
+                    ir::InstructionKind::StackPush(_, _) => InstructionTypeAndEffects {
+                        output_type: None,
+                        effects: InstructionEffects {
+                            global: StateEffect::Write,
+                            ..InstructionEffects::none()
+                        },
+                    },
+                    ir::InstructionKind::StackPushArgs { .. } => InstructionTypeAndEffects {
                         output_type: None,
                         effects: InstructionEffects {
                             global: StateEffect::Write,
@@ -462,7 +469,7 @@ impl TypesAndEffects {
                             ..InstructionEffects::none()
                         },
                     },
-                    ir::InstructionKind::GetStack(_, _) => InstructionTypeAndEffects {
+                    ir::InstructionKind::StackGet(_, _) => InstructionTypeAndEffects {
                         output_type: Some(InstructionOutputType::Any),
                         effects: InstructionEffects::none(),
                     },
