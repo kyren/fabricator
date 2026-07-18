@@ -93,11 +93,21 @@ impl ParseSettings {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum StatementTrailer {
     // Statement either must have or may have a trailing semicolon, depending on parser settings.
     SemiColon,
     // Statement must not have a trailing semicolon
     NoSemiColon,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum CommaSeparatedElement {
+    // Element can be in any place in the comma separated list.
+    Normal,
+    // Element must be the final element in a comma separated list and cannot be followed by another
+    // comma.
+    Trailer,
 }
 
 struct BufferedToken<S> {
@@ -589,7 +599,7 @@ where
     fn parse_function_stmt(&mut self) -> Result<ast::FunctionStmt<S>, ParseError> {
         let mut span = self.parse_token(TokenKind::Function)?;
         let name = self.parse_identifier()?;
-        let parameters = self.parse_parameter_list()?.0;
+        let parameters = self.parse_parameter_list()?;
 
         self.look_ahead(1);
         let inherit = if matches!(self.peek(0).kind, TokenKind::Colon) {
@@ -643,7 +653,7 @@ where
     fn parse_closure_stmt(&mut self) -> Result<ast::ClosureStmt<S>, ParseError> {
         let mut span = self.parse_token(TokenKind::Closure)?;
         let name = self.parse_identifier()?;
-        let parameters = self.parse_parameter_list()?.0;
+        let parameters = self.parse_parameter_list()?;
 
         self.parse_token(TokenKind::LeftBrace)?;
         let body = self.parse_block(|t| matches!(t, TokenKind::RightBrace))?;
@@ -679,7 +689,7 @@ where
 
                 variants.push((key, value));
 
-                Ok(())
+                Ok(CommaSeparatedElement::Normal)
             },
         )?);
 
@@ -925,7 +935,7 @@ where
                         TokenKind::RightParen,
                         |this| {
                             arguments.push(this.parse_expression()?);
-                            Ok(())
+                            Ok(CommaSeparatedElement::Normal)
                         },
                     )?);
 
@@ -1133,7 +1143,7 @@ where
             TokenKind::Function => {
                 self.advance(1);
 
-                let parameters = self.parse_parameter_list()?.0;
+                let parameters = self.parse_parameter_list()?;
 
                 self.look_ahead(1);
                 let inherit = if matches!(self.peek(0).kind, TokenKind::Colon) {
@@ -1185,7 +1195,7 @@ where
             TokenKind::Closure => {
                 self.advance(1);
 
-                let parameters = self.parse_parameter_list()?.0;
+                let parameters = self.parse_parameter_list()?;
 
                 self.parse_token(TokenKind::LeftBrace)?;
                 let body = self.parse_block(|t| matches!(t, TokenKind::RightBrace))?;
@@ -1227,6 +1237,10 @@ where
             }
             TokenKind::LeftBrace => Ok(ast::Expression::Object(self.parse_object()?)),
             TokenKind::LeftBracket => Ok(ast::Expression::Array(self.parse_array()?)),
+            TokenKind::DotDotDot => {
+                self.advance(1);
+                Ok(ast::Expression::VarArgs(tok_span))
+            }
             _ => self.parse_suffixed_expression(),
         }
     }
@@ -1247,7 +1261,7 @@ where
                     fields.push(ast::Field::Init(key));
                 }
 
-                Ok(())
+                Ok(CommaSeparatedElement::Normal)
             })?;
 
         Ok(ast::ObjectExpr { fields, span })
@@ -1261,38 +1275,52 @@ where
             TokenKind::RightBracket,
             |this| {
                 entries.push(this.parse_expression()?);
-                Ok(())
+                Ok(CommaSeparatedElement::Normal)
             },
         )?;
 
         Ok(ast::ArrayExpr { entries, span })
     }
 
-    fn parse_parameter_list(&mut self) -> Result<(Vec<ast::Parameter<S>>, Span), ParseError> {
+    fn parse_parameter_list(&mut self) -> Result<ast::ParameterList<S>, ParseError> {
         let mut parameters = Vec::new();
+        let mut var_args = None;
         let span =
             self.parse_comma_separated_list(TokenKind::LeftParen, TokenKind::RightParen, |this| {
-                let name = this.parse_identifier()?;
-                let mut default = None;
-                let mut span = name.span;
-
                 this.look_ahead(1);
-                if matches!(this.peek(0).kind, TokenKind::Equal) {
+                let next_token = this.peek(0);
+                if matches!(next_token.kind, TokenKind::DotDotDot) {
+                    var_args = Some(next_token.span);
                     this.advance(1);
-                    let expr = this.parse_expression()?;
-                    span = span.combine(expr.span());
-                    default = Some(expr);
-                }
+                    Ok(CommaSeparatedElement::Trailer)
+                } else {
+                    let name = this.parse_identifier()?;
+                    let mut default = None;
+                    let mut span = name.span;
 
-                parameters.push(ast::Parameter {
-                    name,
-                    default,
-                    span,
-                });
-                Ok(())
+                    this.look_ahead(1);
+                    if matches!(this.peek(0).kind, TokenKind::Equal) {
+                        this.advance(1);
+                        let expr = this.parse_expression()?;
+                        span = span.combine(expr.span());
+                        default = Some(expr);
+                    }
+
+                    parameters.push(ast::Parameter {
+                        name,
+                        default,
+                        span,
+                    });
+
+                    Ok(CommaSeparatedElement::Normal)
+                }
             })?;
 
-        Ok((parameters, span))
+        Ok(ast::ParameterList {
+            fixed: parameters,
+            var_args,
+            span,
+        })
     }
 
     /// Parse a comma separated list of items surrounded by paired left / right delimiters.
@@ -1302,7 +1330,7 @@ where
         &mut self,
         left_delimiter: TokenKind<()>,
         right_delimiter: TokenKind<()>,
-        mut read_item: impl FnMut(&mut Self) -> Result<(), ParseError>,
+        mut read_item: impl FnMut(&mut Self) -> Result<CommaSeparatedElement, ParseError>,
     ) -> Result<Span, ParseError> {
         let mut span = self.parse_token(left_delimiter)?;
 
@@ -1314,20 +1342,24 @@ where
                 break;
             }
 
-            read_item(self)?;
+            let item_type = read_item(self)?;
 
             self.look_ahead(1);
             let next = self.peek(0);
-            match &next.kind {
-                TokenKind::Comma => {
+
+            match (item_type, &next.kind) {
+                (CommaSeparatedElement::Normal, TokenKind::Comma) => {
                     self.advance(1);
                 }
-                kind if is_right_delimiter(kind) => {
+                (_, kind) if is_right_delimiter(kind) => {
                     break;
                 }
                 _ => {
                     return Err(ParseError {
-                        kind: ParseErrorKind::unexpected_token(&next.kind, "',' or '}'"),
+                        kind: ParseErrorKind::unexpected_token(
+                            &next.kind,
+                            "',' or <right delimiter>",
+                        ),
                         span: next.span,
                     });
                 }
@@ -1335,7 +1367,6 @@ where
         }
 
         span = span.combine(self.parse_token(right_delimiter)?);
-
         Ok(span)
     }
 

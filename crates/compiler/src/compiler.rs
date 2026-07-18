@@ -26,7 +26,6 @@ use crate::{
         simplify_branches::simplify_branches,
         ssa_conversion::convert_to_ssa,
         variable_liveness::{VariableLiveness, VariableVerificationError},
-        verify_arguments::{ArgumentVerificationError, verify_arguments},
         verify_references::{ReferenceVerificationError, verify_references},
         verify_upvars::{UpVarVerificationError, verify_no_root_upvars, verify_upvars},
     },
@@ -176,8 +175,6 @@ pub enum IrVerificationError {
     #[error("{0}")]
     ReferenceVerification(#[from] ReferenceVerificationError),
     #[error("{0}")]
-    ArgumentVerification(#[from] ArgumentVerificationError),
-    #[error("{0}")]
     UpVarVerification(#[from] UpVarVerificationError),
     #[error("{0}")]
     InstructionVerification(#[from] InstructionVerificationError),
@@ -195,7 +192,6 @@ pub enum IrVerificationError {
 pub fn verify_ir<S: Clone>(ir: &ir::Function<S>) -> Result<(), IrVerificationError> {
     fn inner_verify_ir<S: Clone>(ir: &ir::Function<S>) -> Result<(), IrVerificationError> {
         verify_references(ir)?;
-        verify_arguments(ir)?;
         verify_upvars(ir)?;
         InstructionLiveness::compute(ir)?;
         ShadowLiveness::compute(ir)?;

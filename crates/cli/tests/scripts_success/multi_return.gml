@@ -55,4 +55,45 @@ function test_ret_multi_last_ret() {
 }
 test_ret_multi_last_arg();
 
+function test_varargs() {
+    closure ret_varargs(...) {
+        return ...;
+    }
+
+    let a, b, c = ret_varargs(1, 2, 3);
+    assert(a == 1, b == 2, c == 3);
+
+    let a, b = ret_varargs(1);
+    assert(a == 1, b == undefined);
+
+    let a, b, c, d = ret_varargs(1, 2, ret_varargs(3, 4));
+    assert(a == 1, b == 2, c == 3, d == 4);
+
+    closure ret_varargs_pre_ret(...) {
+        return 1, 2, ...;
+    }
+
+    let a, b, c, d = ret_varargs_pre_ret(3, 4);
+    assert(a == 1, b == 2, c == 3, d == 4);
+
+    closure ret_varargs_pre_arg(a, b, ...) {
+        return ...;
+    }
+
+    let a, b, c = ret_varargs_pre_arg(1, 2, 3, 4, 5);
+    assert(a == 3, b == 4, c == 5);
+
+    closure test_let_varargs(ac, bc, cc, ...) {
+        let a, b, c = ...;
+        assert(a == ac, b == bc, c == cc);
+    }
+    test_let_varargs(3, 2, 1, 3, 2, 1);
+
+    closure test_varargs_single_position(test, ...) {
+        assert(test == ...);
+    }
+    test_varargs_single_position(4, 4, 3, 2, 1);
+}
+test_varargs();
+
 return true;

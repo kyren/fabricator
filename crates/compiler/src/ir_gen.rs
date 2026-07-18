@@ -59,14 +59,14 @@ pub enum IrGenErrorKind {
     ConstructorStaticNotTopLevel,
     #[error("static variables in constructors must be initialized")]
     ConstructorStaticNotInitialized,
-    #[error("function not allowed to have a return statement with an argument")]
+    #[error("function type cannot have a return statement with an argument")]
     CannotReturnValue,
     #[error("break statement with no target")]
     BreakWithNoTarget,
     #[error("continue statement with no target")]
     ContinueWithNoTarget,
-    #[error("unsupported feature: {0}")]
-    UnsupportedFeature(&'static str),
+    #[error("use of variable arguments (`...`) when no variable arguments are declared")]
+    NoVarArgs,
 }
 
 #[derive(Debug, Error)]
@@ -165,6 +165,7 @@ impl IrGenSettings {
         S: Eq + Hash + Clone,
     {
         let mut compiler = FunctionCompiler::new(self, interner, FunctionRef::Chunk, var_dict);
+        compiler.has_var_args = true;
         compiler.block(block)?;
         Ok(compiler.finish())
     }
@@ -207,6 +208,8 @@ struct FunctionCompiler<'a, S> {
 
     function: ir::Function<S>,
 
+    fixed_parameters: usize,
+    has_var_args: bool,
     func_type: FunctionType,
 
     /// This will be `Some` if the current block is unfinished and can be appended to.
@@ -450,7 +453,6 @@ where
 
         let function = ir::Function {
             reference,
-            num_parameters: 0,
             instructions,
             blocks,
             variables,
@@ -466,6 +468,8 @@ where
             interner,
             var_dict,
             function,
+            fixed_parameters: 0,
+            has_var_args: false,
             func_type: FunctionType::Normal,
             current_block: Some(first_block),
             continue_target_stack: Vec::new(),
@@ -477,10 +481,11 @@ where
         }
     }
 
-    fn declare_parameters(&mut self, parameters: &[ast::Parameter<S>]) -> Result<(), IrGenError> {
-        self.function.num_parameters = parameters.len();
+    fn declare_parameters(&mut self, parameters: &ast::ParameterList<S>) -> Result<(), IrGenError> {
+        self.fixed_parameters = parameters.fixed.len();
+        self.has_var_args = parameters.var_args.is_some();
 
-        for (param_index, param) in parameters.iter().enumerate() {
+        for (param_index, param) in parameters.fixed.iter().enumerate() {
             let arg_var =
                 self.declare_function_var(param.name.clone(), ir::Variable::Heap.into())?;
 
@@ -850,7 +855,7 @@ where
                 }
 
                 for (name, value) in &var_decls.vars {
-                    self.var_decl(name, value.as_ref())?;
+                    self.decl_var(name, value.as_ref())?;
                 }
                 Ok(())
             }
@@ -868,12 +873,12 @@ where
                 }
 
                 for (name, value) in &static_decls.vars {
-                    self.static_decl(static_decls.span, name, value.as_ref())?;
+                    self.decl_static_var(static_decls.span, name, value.as_ref())?;
                 }
                 Ok(())
             }
-            ast::Statement::Let(let_decls) => self.let_decl(let_decls),
-            ast::Statement::StaticLet(let_decls) => self.static_let_decl(let_decls),
+            ast::Statement::Let(let_decls) => self.let_stmt(let_decls),
+            ast::Statement::StaticLet(let_decls) => self.static_let_stmt(let_decls),
             ast::Statement::GlobalVar(ident) => Err(IrGenError {
                 kind: IrGenErrorKind::MisplacedExport,
                 span: ident.span,
@@ -925,7 +930,7 @@ where
         }
     }
 
-    fn var_decl(
+    fn decl_var(
         &mut self,
         name: &ast::Ident<S>,
         value: Option<&ast::Expression<S>>,
@@ -940,7 +945,7 @@ where
         Ok(())
     }
 
-    fn static_decl(
+    fn decl_static_var(
         &mut self,
         span: Span,
         name: &ast::Ident<S>,
@@ -1007,7 +1012,7 @@ where
         Ok(())
     }
 
-    fn let_decl(&mut self, let_decl_stmt: &ast::LetDeclarationStmt<S>) -> Result<(), IrGenError> {
+    fn let_stmt(&mut self, let_decl_stmt: &ast::LetDeclarationStmt<S>) -> Result<(), IrGenError> {
         // Declare all `let` variables, with special behavior for the final expression. If the final
         // expression is an expression with multiple return values, then set the remaining variables
         // to the corresponding return of the final evaluated expression.
@@ -1021,34 +1026,10 @@ where
             ));
         }
 
-        for i in 0..let_decl_stmt.exprs.len() {
-            match &let_decl_stmt.exprs[i] {
-                ast::Expression::Call(call) if i + 1 == let_decl_stmt.exprs.len() => {
-                    let call_scope = self.open_call_expr(call)?;
-                    for j in i..let_vars.len() {
-                        let (ident, var_id) = let_vars[j];
-                        let value = self.push_instruction(
-                            call.span,
-                            ir::InstructionKind::GetStack(call_scope, j - i),
-                        );
-                        self.push_instruction(
-                            ident.span,
-                            ir::InstructionKind::SetVariable(var_id, value),
-                        );
-                    }
-                    self.close_call_scope(call.span, call_scope);
-                }
-                expr => {
-                    let value = self.expression(expr)?;
-                    if let Some((ident, var_id)) = let_vars.get(i).copied() {
-                        self.push_instruction(
-                            ident.span,
-                            ir::InstructionKind::SetVariable(var_id, value),
-                        );
-                    }
-                }
-            }
-        }
+        self.set_variables_vararg(
+            let_vars.iter().map(|&(_, var_id)| var_id),
+            let_decl_stmt.exprs.iter(),
+        )?;
 
         for (vname, var_id) in let_vars {
             self.declare_block_var(vname.clone(), var_id)?;
@@ -1057,7 +1038,7 @@ where
         Ok(())
     }
 
-    fn static_let_decl(
+    fn static_let_stmt(
         &mut self,
         let_decl_stmt: &ast::LetDeclarationStmt<S>,
     ) -> Result<(), IrGenError> {
@@ -1083,6 +1064,18 @@ where
             // initialization state. Since `let` variables are not in scope with each other in the
             // same declaration, we can use a single initialization variable for everything.
 
+            let mut let_vars = Vec::new();
+
+            for vname in &let_decl_stmt.vars {
+                let_vars.push((
+                    vname,
+                    self.open_owned_block_var(
+                        vname.span,
+                        ir::Variable::Static(Constant::Undefined),
+                    ),
+                ));
+            }
+
             // Create a hidden static variable to hold the initialization state.
             let is_initialized = self
                 .function
@@ -1107,54 +1100,10 @@ where
 
             self.start_new_block(init_block);
 
-            // Declare all `let` variables, with special behavior for the final expression. If the
-            // final expression is an expression with multiple return values, then set the remaining
-            // variables to the corresponding return of the final evaluated expression.
-
-            let mut let_vars = Vec::new();
-
-            for vname in &let_decl_stmt.vars {
-                let_vars.push((
-                    vname,
-                    self.open_owned_block_var(
-                        vname.span,
-                        ir::Variable::Static(Constant::Undefined),
-                    ),
-                ));
-            }
-
-            for i in 0..let_decl_stmt.exprs.len() {
-                match &let_decl_stmt.exprs[i] {
-                    ast::Expression::Call(call) if i + 1 == let_decl_stmt.exprs.len() => {
-                        let call_scope = self.open_call_expr(call)?;
-                        for j in i..let_vars.len() {
-                            let (ident, var_id) = let_vars[j];
-                            let value = self.push_instruction(
-                                call.span,
-                                ir::InstructionKind::GetStack(call_scope, j - i),
-                            );
-                            self.push_instruction(
-                                ident.span,
-                                ir::InstructionKind::SetVariable(var_id, value),
-                            );
-                        }
-                        self.close_call_scope(call.span, call_scope);
-                    }
-                    expr => {
-                        let value = self.expression(expr)?;
-                        if let Some((ident, var_id)) = let_vars.get(i).copied() {
-                            self.push_instruction(
-                                ident.span,
-                                ir::InstructionKind::SetVariable(var_id, value),
-                            );
-                        }
-                    }
-                }
-            }
-
-            for (vname, var_id) in let_vars {
-                self.declare_block_var(vname.clone(), var_id)?;
-            }
+            self.set_variables_vararg(
+                let_vars.iter().map(|&(_, var_id)| var_id),
+                let_decl_stmt.exprs.iter(),
+            )?;
 
             let true_ = self.push_instruction(
                 let_decl_stmt.span,
@@ -1168,6 +1117,69 @@ where
             self.end_current_block(let_decl_stmt.span, ir::ExitKind::Jump(successor));
 
             self.start_new_block(successor);
+
+            for (vname, var_id) in let_vars {
+                self.declare_block_var(vname.clone(), var_id)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    // Evaluate a list of expressions and set the results to a list of variables, with special
+    // behavior for the final expression. If the final expression is a multi-vaule expression, then
+    // set any remaining variables to the corresponding value of the final multi-value expression.
+    fn set_variables_vararg<'b>(
+        &mut self,
+        variables: impl IntoIterator<Item = ir::VarId>,
+        expressions: impl IntoIterator<Item = &'b ast::Expression<S>>,
+    ) -> Result<(), IrGenError>
+    where
+        S: 'b,
+    {
+        let mut variables = variables.into_iter();
+        let mut expressions = expressions.into_iter().peekable();
+
+        while let Some(expr) = expressions.next() {
+            match expr {
+                ast::Expression::Call(call) if expressions.peek().is_none() => {
+                    let call_scope = self.open_call_expr(call)?;
+                    for (j, var_id) in variables.enumerate() {
+                        let value = self.push_instruction(
+                            call.span,
+                            ir::InstructionKind::StackGet(call_scope, j),
+                        );
+                        self.push_instruction(
+                            call.span,
+                            ir::InstructionKind::SetVariable(var_id, value),
+                        );
+                    }
+                    self.close_call_scope(call.span, call_scope);
+                    break;
+                }
+                &ast::Expression::VarArgs(span) if expressions.peek().is_none() => {
+                    for (j, var_id) in variables.enumerate() {
+                        let value = self.push_instruction(
+                            span,
+                            ir::InstructionKind::FixedArgument(self.fixed_parameters + j),
+                        );
+                        self.push_instruction(
+                            span,
+                            ir::InstructionKind::SetVariable(var_id, value),
+                        );
+                    }
+                    break;
+                }
+                expr => {
+                    let value = self.expression(expr)?;
+                    if let Some(var_id) = variables.next() {
+                        self.push_instruction(
+                            expr.span(),
+                            ir::InstructionKind::SetVariable(var_id, value),
+                        );
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -2402,6 +2414,19 @@ where
                 }
                 self.get_index(index_expr.span, target, &indexes)
             }
+            &ast::Expression::VarArgs(span) => {
+                if !self.has_var_args {
+                    return Err(IrGenError {
+                        kind: IrGenErrorKind::NoVarArgs,
+                        span,
+                    });
+                }
+                // A `...` in a single value position always evaluates to the first vararg.
+                self.push_instruction(
+                    span,
+                    ir::InstructionKind::FixedArgument(self.fixed_parameters),
+                )
+            }
             ast::Expression::Argument(arg_expr) => {
                 let arg_index = self.expression(&arg_expr.arg_index)?;
                 self.push_instruction(arg_expr.span, ir::InstructionKind::Argument(arg_index))
@@ -2432,9 +2457,9 @@ where
 
     /// Evaluate all arguments, open a new call scope, then push all arguments to it.
     ///
-    /// Trailing function calls are treated special, the trailing function call is called as a
-    /// special multi-return call, and this is done recursively for all nested trailing function
-    /// calls.
+    /// Trailing expressions are treated special. If the trailing expression is a special
+    /// multi-value expression, then all returns are pushed to the arguments stack for this
+    /// expression, and this is done recursively for all nested trailing expressions.
     fn open_call_arg_exprs(
         &mut self,
         call_span: Span,
@@ -2442,6 +2467,7 @@ where
     ) -> Result<ir::CallScope, IrGenError> {
         enum Entry {
             Argument(Span, ir::InstId),
+            VarArgs(Span),
             TrailingCall(Span, CallTarget),
         }
 
@@ -2459,6 +2485,10 @@ where
                         entries.push(Entry::Argument(arg.span(), self.expression(arg)?));
                     }
                     match last_arg {
+                        &ast::Expression::VarArgs(span) => {
+                            entries.push(Entry::VarArgs(span));
+                            break;
+                        }
                         ast::Expression::Call(call) => {
                             entries.push(Entry::TrailingCall(
                                 call.span,
@@ -2488,6 +2518,15 @@ where
                 Entry::Argument(span, inst_id) => {
                     self.push_stack_values(span, call_scope, [inst_id]);
                     stack_base += 1;
+                }
+                Entry::VarArgs(span) => {
+                    self.push_instruction(
+                        span,
+                        ir::InstructionKind::StackPushArgs {
+                            scope: call_scope,
+                            first_arg: self.fixed_parameters,
+                        },
+                    );
                 }
                 Entry::TrailingCall(span, call_target) => {
                     pending_calls.push((stack_base, span, call_target));
@@ -3128,11 +3167,7 @@ where
             }
         };
 
-        assert!(
-            self.function_scope_vars
-                .insert(vname, var_type.clone())
-                .is_none()
-        );
+        self.function_scope_vars.insert(vname, var_type.clone());
 
         Ok(var_type)
     }
@@ -3443,7 +3478,7 @@ where
         args: impl IntoIterator<Item = ir::InstId>,
     ) {
         for arg in args {
-            self.push_instruction(span, ir::InstructionKind::PushStack(call_scope, arg));
+            self.push_instruction(span, ir::InstructionKind::StackPush(call_scope, arg));
         }
     }
 
@@ -3456,7 +3491,7 @@ where
         array::from_fn(|i| {
             self.push_instruction(
                 span,
-                ir::InstructionKind::GetStack(call_scope, stack_base + i),
+                ir::InstructionKind::StackGet(call_scope, stack_base + i),
             )
         })
     }
