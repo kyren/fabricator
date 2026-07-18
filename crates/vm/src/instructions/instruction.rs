@@ -224,6 +224,10 @@ macro_rules! for_each_instruction {
             };
 
             [basic]
+            /// Push all arguments starting at the given argument to the current stack frame.
+            stack_push_args = StackPushArgs { first_index: StackIdx };
+
+            [basic]
             /// Get the element of the current stack frame at the given index and place it in the
             /// `dest` register.
             ///

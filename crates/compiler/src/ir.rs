@@ -308,7 +308,12 @@ pub enum InstructionKind<S> {
     },
     OpenCallScope(CallScope),
     /// Push a value onto the stack for this call scope.
-    PushStack(CallScope, InstId),
+    StackPush(CallScope, InstId),
+    /// Push all arguments past `first_arg` to onto the stack for this call scope.
+    StackPushArgs {
+        scope: CallScope,
+        first_arg: usize,
+    },
     /// Call a function using all of the values on the stack for this call scope, replacing the
     /// stack with all return values.
     Call {
@@ -318,7 +323,7 @@ pub enum InstructionKind<S> {
         this: Option<InstId>,
     },
     /// Get a value from the call stack for this call scope at the given index.
-    GetStack(CallScope, usize),
+    StackGet(CallScope, usize),
     /// Close this call scope.
     CloseCallScope(CallScope),
 }
@@ -364,7 +369,7 @@ impl<S> InstructionKind<S> {
             InstructionKind::Upsilon(_, source) => make_iter!([source]),
             InstructionKind::UnOp { source, .. } => make_iter!([source]),
             InstructionKind::BinOp { left, right, .. } => make_iter!([left, right]),
-            InstructionKind::PushStack(_, source) => make_iter!([source]),
+            InstructionKind::StackPush(_, source) => make_iter!([source]),
             InstructionKind::Call { func, this, .. } => {
                 if let Some(this) = this {
                     make_iter!([func, this])
@@ -404,7 +409,7 @@ impl<S> InstructionKind<S> {
             InstructionKind::Upsilon(_, source) => make_iter!([source]),
             InstructionKind::UnOp { source, .. } => make_iter!([source]),
             InstructionKind::BinOp { left, right, .. } => make_iter!([left, right]),
-            InstructionKind::PushStack(_, source) => make_iter!([source]),
+            InstructionKind::StackPush(_, source) => make_iter!([source]),
             InstructionKind::Call { func, this, .. } => {
                 if let Some(this) = this {
                     make_iter!([func, this])
@@ -440,7 +445,7 @@ impl<S> InstructionKind<S> {
                 | InstructionKind::Phi(_)
                 | InstructionKind::UnOp { .. }
                 | InstructionKind::BinOp { .. }
-                | InstructionKind::GetStack(_, _)
+                | InstructionKind::StackGet(_, _)
         )
     }
 }
@@ -635,7 +640,6 @@ pub type FunctionMap<S> = IdMap<FuncId, Function<S>>;
 #[derive(Clone)]
 pub struct Function<S> {
     pub reference: FunctionRef<S>,
-    pub num_parameters: usize,
 
     pub instructions: InstructionMap<S>,
     pub blocks: BlockMap,
@@ -786,8 +790,11 @@ impl<S: AsRef<str>> Function<S> {
                         BinOp::NullCoalesce => writeln!(f, "null_coalesce({left}, {right})")?,
                     },
                     InstructionKind::OpenCallScope(scope) => writeln!(f, "open_call({scope})")?,
-                    InstructionKind::PushStack(scope, source) => {
-                        writeln!(f, "push_stack({scope}, {source})")?
+                    InstructionKind::StackPush(scope, source) => {
+                        writeln!(f, "stack_push({scope}, {source})")?
+                    }
+                    InstructionKind::StackPushArgs { scope, first_arg } => {
+                        writeln!(f, "stack_push_args({scope}, first_arg = {first_arg})")?
                     }
                     InstructionKind::Call {
                         scope,
@@ -801,8 +808,8 @@ impl<S: AsRef<str>> Function<S> {
                         }
                         writeln!(f, ")")?;
                     }
-                    InstructionKind::GetStack(scope, index) => {
-                        writeln!(f, "get_stack({scope}, {index})")?
+                    InstructionKind::StackGet(scope, index) => {
+                        writeln!(f, "stack_get({scope}, {index})")?
                     }
                     InstructionKind::CloseCallScope(scope) => {
                         writeln!(f, "close_call({scope})")?;

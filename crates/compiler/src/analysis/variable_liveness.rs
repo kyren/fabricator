@@ -238,7 +238,6 @@ mod tests {
 
         let ir = ir::Function {
             reference: FunctionRef::Chunk,
-            num_parameters: 0,
             instructions,
             blocks,
             variables,
@@ -300,7 +299,6 @@ mod tests {
 
         let ir = ir::Function {
             reference: FunctionRef::Chunk,
-            num_parameters: 0,
             instructions,
             blocks,
             variables,

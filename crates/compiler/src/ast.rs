@@ -63,7 +63,7 @@ pub struct FunctionStmt<S> {
     pub name: Ident<S>,
     pub is_constructor: bool,
     pub inherit: Option<Call<S>>,
-    pub parameters: Vec<Parameter<S>>,
+    pub parameters: ParameterList<S>,
     pub body: Block<S>,
     pub span: Span,
 }
@@ -71,7 +71,7 @@ pub struct FunctionStmt<S> {
 #[derive(Debug, Clone)]
 pub struct ClosureStmt<S> {
     pub name: Ident<S>,
-    pub parameters: Vec<Parameter<S>>,
+    pub parameters: ParameterList<S>,
     pub body: Block<S>,
     pub span: Span,
 }
@@ -183,6 +183,7 @@ pub enum Expression<S> {
     Call(Call<S>),
     Field(FieldExpr<S>),
     Index(IndexExpr<S>),
+    VarArgs(Span),
     Argument(ArgumentExpr<S>),
     ArgumentCount(Span),
 }
@@ -239,14 +240,14 @@ pub struct TernaryExpr<S> {
 pub struct FunctionExpr<S> {
     pub is_constructor: bool,
     pub inherit: Option<Call<S>>,
-    pub parameters: Vec<Parameter<S>>,
+    pub parameters: ParameterList<S>,
     pub body: Block<S>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
 pub struct ClosureExpr<S> {
-    pub parameters: Vec<Parameter<S>>,
+    pub parameters: ParameterList<S>,
     pub body: Block<S>,
     pub span: Span,
 }
@@ -284,6 +285,13 @@ pub struct Call<S> {
 pub struct Parameter<S> {
     pub name: Ident<S>,
     pub default: Option<Expression<S>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParameterList<S> {
+    pub fixed: Vec<Parameter<S>>,
+    pub var_args: Option<Span>,
     pub span: Span,
 }
 
@@ -585,9 +593,7 @@ impl<S> Walk<S> for FunctionStmt<S> {
         if let Some(call) = &self.inherit {
             call.walk(visitor)?;
         }
-        for parameter in &self.parameters {
-            parameter.walk(visitor)?;
-        }
+        self.parameters.walk(visitor)?;
         self.body.walk(visitor)?;
         ControlFlow::Continue(())
     }
@@ -598,9 +604,7 @@ impl<S> WalkMut<S> for FunctionStmt<S> {
         if let Some(call) = &mut self.inherit {
             call.walk_mut(visitor)?;
         }
-        for parameter in &mut self.parameters {
-            parameter.walk_mut(visitor)?;
-        }
+        self.parameters.walk_mut(visitor)?;
         self.body.walk_mut(visitor)?;
         ControlFlow::Continue(())
     }
@@ -608,9 +612,7 @@ impl<S> WalkMut<S> for FunctionStmt<S> {
 
 impl<S> Walk<S> for ClosureStmt<S> {
     fn walk<V: Visitor<S>>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
-        for parameter in &self.parameters {
-            parameter.walk(visitor)?;
-        }
+        self.parameters.walk(visitor)?;
         self.body.walk(visitor)?;
         ControlFlow::Continue(())
     }
@@ -618,9 +620,7 @@ impl<S> Walk<S> for ClosureStmt<S> {
 
 impl<S> WalkMut<S> for ClosureStmt<S> {
     fn walk_mut<V: VisitorMut<S>>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
-        for parameter in &mut self.parameters {
-            parameter.walk_mut(visitor)?;
-        }
+        self.parameters.walk_mut(visitor)?;
         self.body.walk_mut(visitor)?;
         ControlFlow::Continue(())
     }
@@ -891,6 +891,7 @@ impl<S> Expression<S> {
             Expression::Call(call) => call.span,
             Expression::Field(field_expr) => field_expr.span,
             Expression::Index(index_expr) => index_expr.span,
+            Expression::VarArgs(span) => *span,
             Expression::Argument(arg_expr) => arg_expr.span,
             Expression::ArgumentCount(span) => *span,
         }
@@ -932,6 +933,7 @@ impl<S> Walk<S> for Expression<S> {
             | Expression::This(_)
             | Expression::Other(_)
             | Expression::Constant(..)
+            | Expression::VarArgs(..)
             | Expression::ArgumentCount(_) => ControlFlow::Continue(()),
         }
     }
@@ -959,6 +961,7 @@ impl<S> WalkMut<S> for Expression<S> {
             | Expression::This(_)
             | Expression::Other(_)
             | Expression::Constant(..)
+            | Expression::VarArgs(..)
             | Expression::ArgumentCount(_) => ControlFlow::Continue(()),
         }
     }
@@ -1147,9 +1150,7 @@ impl<S> Walk<S> for FunctionExpr<S> {
         if let Some(call) = &self.inherit {
             call.walk(visitor)?;
         }
-        for parameter in &self.parameters {
-            parameter.walk(visitor)?;
-        }
+        self.parameters.walk(visitor)?;
         self.body.walk(visitor)?;
         ControlFlow::Continue(())
     }
@@ -1160,9 +1161,7 @@ impl<S> WalkMut<S> for FunctionExpr<S> {
         if let Some(call) = &mut self.inherit {
             call.walk_mut(visitor)?;
         }
-        for parameter in &mut self.parameters {
-            parameter.walk_mut(visitor)?;
-        }
+        self.parameters.walk_mut(visitor)?;
         self.body.walk_mut(visitor)?;
         ControlFlow::Continue(())
     }
@@ -1170,9 +1169,7 @@ impl<S> WalkMut<S> for FunctionExpr<S> {
 
 impl<S> Walk<S> for ClosureExpr<S> {
     fn walk<V: Visitor<S>>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
-        for parameter in &self.parameters {
-            parameter.walk(visitor)?;
-        }
+        self.parameters.walk(visitor)?;
         self.body.walk(visitor)?;
         ControlFlow::Continue(())
     }
@@ -1180,9 +1177,7 @@ impl<S> Walk<S> for ClosureExpr<S> {
 
 impl<S> WalkMut<S> for ClosureExpr<S> {
     fn walk_mut<V: VisitorMut<S>>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
-        for parameter in &mut self.parameters {
-            parameter.walk_mut(visitor)?;
-        }
+        self.parameters.walk_mut(visitor)?;
         self.body.walk_mut(visitor)?;
         ControlFlow::Continue(())
     }
@@ -1269,6 +1264,24 @@ impl<S> WalkMut<S> for Parameter<S> {
     fn walk_mut<V: VisitorMut<S>>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
         if let Some(default) = &mut self.default {
             visitor.visit_expr_mut(default)?;
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+impl<S> Walk<S> for ParameterList<S> {
+    fn walk<V: Visitor<S>>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
+        for parameter in &self.fixed {
+            parameter.walk(visitor)?;
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+impl<S> WalkMut<S> for ParameterList<S> {
+    fn walk_mut<V: VisitorMut<S>>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
+        for parameter in &mut self.fixed {
+            parameter.walk_mut(visitor)?;
         }
         ControlFlow::Continue(())
     }

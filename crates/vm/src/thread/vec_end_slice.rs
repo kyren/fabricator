@@ -12,7 +12,7 @@ use std::{
 /// each stack.
 #[derive(Debug)]
 pub struct VecEndSlice<'a, T> {
-    values: &'a mut Vec<T>,
+    inner: &'a mut Vec<T>,
     bottom: usize,
 }
 
@@ -24,13 +24,16 @@ impl<'a, T> VecEndSlice<'a, T> {
             "slice bottom {bottom} is greater than vec len {}",
             values.len()
         );
-        Self { values, bottom }
+        Self {
+            inner: values,
+            bottom,
+        }
     }
 
     /// Return an immutable slice of the values *below* the current bottom.
     #[inline]
     pub fn below(&self) -> &[T] {
-        &self.values[0..self.bottom]
+        &self.inner[0..self.bottom]
     }
 
     #[inline]
@@ -41,25 +44,25 @@ impl<'a, T> VecEndSlice<'a, T> {
     #[inline]
     pub fn sub_slice(&mut self, bottom: usize) -> VecEndSlice<'_, T> {
         assert!(
-            self.values.len() - self.bottom >= bottom,
+            self.inner.len() - self.bottom >= bottom,
             "sub-slice bottom {bottom} is greater than slice len {}",
-            self.values.len() - self.bottom,
+            self.inner.len() - self.bottom,
         );
         VecEndSlice {
-            values: self.values,
+            inner: self.inner,
             bottom: self.bottom + bottom,
         }
     }
 
     #[inline]
     pub fn push_back(&mut self, value: T) {
-        self.values.push(value);
+        self.inner.push(value);
     }
 
     #[inline]
     pub fn pop_back(&mut self) -> Option<T> {
-        if self.values.len() > self.bottom {
-            Some(self.values.pop().unwrap())
+        if self.inner.len() > self.bottom {
+            Some(self.inner.pop().unwrap())
         } else {
             None
         }
@@ -67,7 +70,7 @@ impl<'a, T> VecEndSlice<'a, T> {
 
     #[inline]
     pub fn clear(&mut self) {
-        self.values.truncate(self.bottom);
+        self.inner.truncate(self.bottom);
     }
 
     #[inline]
@@ -75,31 +78,45 @@ impl<'a, T> VecEndSlice<'a, T> {
     where
         T: Clone,
     {
-        self.values.resize(self.bottom + size, value);
+        self.inner.resize(self.bottom + size, value);
     }
 
     #[inline]
     pub fn truncate(&mut self, size: usize) {
-        self.values.truncate(self.bottom + size);
+        self.inner.truncate(self.bottom + size);
     }
 
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
-        self.values.reserve(additional);
+        self.inner.reserve(additional);
     }
 
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.values.capacity() - self.bottom
+        self.inner.capacity() - self.bottom
     }
 
     #[inline]
     pub fn remove(&mut self, index: usize) -> T {
-        self.values.remove(self.bottom + index)
+        self.inner.remove(self.bottom + index)
     }
 
     #[inline]
     pub fn drain<R: RangeBounds<usize>>(&mut self, range: R) -> vec::Drain<'_, T> {
+        let (start, end) = self.inner_range(range);
+        self.inner.drain((start, end))
+    }
+
+    #[inline]
+    pub fn extend_from_within<R: RangeBounds<usize>>(&mut self, range: R)
+    where
+        T: Clone,
+    {
+        let (start, end) = self.inner_range(range);
+        self.inner.extend_from_within((start, end));
+    }
+
+    fn inner_range<R: RangeBounds<usize>>(&self, range: R) -> (Bound<usize>, Bound<usize>) {
         let start = match range.start_bound().cloned() {
             Bound::Included(r) => Bound::Included(self.bottom + r),
             Bound::Excluded(r) => Bound::Excluded(self.bottom + r),
@@ -110,7 +127,8 @@ impl<'a, T> VecEndSlice<'a, T> {
             Bound::Excluded(r) => Bound::Excluded(self.bottom + r),
             Bound::Unbounded => Bound::Unbounded,
         };
-        self.values.drain((start, end))
+
+        (start, end)
     }
 }
 
@@ -118,26 +136,26 @@ impl<'a, T> ops::Deref for VecEndSlice<'a, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.values[self.bottom..]
+        &self.inner[self.bottom..]
     }
 }
 
 impl<'a, T> ops::DerefMut for VecEndSlice<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.values[self.bottom..]
+        &mut self.inner[self.bottom..]
     }
 }
 
 impl<'a, T> Extend<T> for VecEndSlice<'a, T> {
     #[inline]
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        self.values.extend(iter);
+        self.inner.extend(iter);
     }
 }
 
 impl<'a, T: Copy> Extend<&'a T> for VecEndSlice<'a, T> {
     #[inline]
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
-        self.values.extend(iter);
+        self.inner.extend(iter);
     }
 }

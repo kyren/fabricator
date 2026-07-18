@@ -399,9 +399,9 @@ impl CallScopeLiveness {
             ir,
             |inst| match inst.kind {
                 ir::InstructionKind::OpenCallScope(scope) => Some(ScopeOperation::Open(scope)),
-                ir::InstructionKind::PushStack(scope, _) => Some(ScopeOperation::Use(scope)),
+                ir::InstructionKind::StackPush(scope, _) => Some(ScopeOperation::Use(scope)),
                 ir::InstructionKind::Call { scope, .. } => Some(ScopeOperation::Use(scope)),
-                ir::InstructionKind::GetStack(scope, _) => Some(ScopeOperation::Use(scope)),
+                ir::InstructionKind::StackGet(scope, _) => Some(ScopeOperation::Use(scope)),
                 ir::InstructionKind::CloseCallScope(scope) => Some(ScopeOperation::Close(scope)),
                 _ => None,
             },
@@ -456,7 +456,6 @@ mod tests {
 
         let ir = ir::Function {
             reference: FunctionRef::Chunk,
-            num_parameters: 0,
             instructions,
             blocks,
             variables: Default::default(),
@@ -518,7 +517,6 @@ mod tests {
 
         let ir = ir::Function {
             reference: FunctionRef::Chunk,
-            num_parameters: 0,
             instructions,
             blocks,
             variables: Default::default(),
@@ -586,7 +584,6 @@ mod tests {
 
         let ir = ir::Function {
             reference: FunctionRef::Chunk,
-            num_parameters: 0,
             instructions,
             blocks,
             variables: Default::default(),
@@ -667,7 +664,6 @@ mod tests {
 
         let ir = ir::Function {
             reference: FunctionRef::Chunk,
-            num_parameters: 0,
             instructions,
             blocks,
             variables: Default::default(),
@@ -746,7 +742,6 @@ mod tests {
 
         let ir = ir::Function {
             reference: FunctionRef::Chunk,
-            num_parameters: 0,
             instructions,
             blocks,
             variables: Default::default(),
