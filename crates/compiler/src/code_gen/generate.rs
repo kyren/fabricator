@@ -104,68 +104,6 @@ fn codegen_function<S: Clone + Eq + Hash>(
             let inst = &ir.instructions[inst_id];
 
             match inst.kind {
-                ir::InstructionKind::PushStack(first_call_scope, first_source) => {
-                    // Consolidate all consecutive `PushStack` instructions of the same call scope
-                    // into minimal instructions.
-
-                    let mut sources = vec![(first_source, inst.span)];
-                    while let Some(&(_, &inst_id)) = inst_iter.peek() {
-                        let inst = &ir.instructions[inst_id];
-                        let ir::InstructionKind::PushStack(scope, source) = inst.kind else {
-                            break;
-                        };
-                        if scope != first_call_scope {
-                            break;
-                        }
-                        inst_iter.next();
-                        sources.push((source, inst.span));
-                    }
-
-                    for chunk in sources.chunks(4) {
-                        match *chunk {
-                            [] => {}
-                            [(a, aspan)] => {
-                                vm_instructions.push((
-                                    Instruction::StackPush {
-                                        source: reg_alloc.instruction_registers[a],
-                                    },
-                                    aspan,
-                                ));
-                            }
-                            [(a, aspan), (b, bspan)] => {
-                                vm_instructions.push((
-                                    Instruction::StackPush2 {
-                                        source_a: reg_alloc.instruction_registers[a],
-                                        source_b: reg_alloc.instruction_registers[b],
-                                    },
-                                    aspan.combine(bspan),
-                                ));
-                            }
-                            [(a, aspan), (b, bspan), (c, cspan)] => {
-                                vm_instructions.push((
-                                    Instruction::StackPush3 {
-                                        source_a: reg_alloc.instruction_registers[a],
-                                        source_b: reg_alloc.instruction_registers[b],
-                                        source_c: reg_alloc.instruction_registers[c],
-                                    },
-                                    aspan.combine(bspan).combine(cspan),
-                                ));
-                            }
-                            [(a, aspan), (b, bspan), (c, cspan), (d, dspan)] => {
-                                vm_instructions.push((
-                                    Instruction::StackPush4 {
-                                        source_a: reg_alloc.instruction_registers[a],
-                                        source_b: reg_alloc.instruction_registers[b],
-                                        source_c: reg_alloc.instruction_registers[c],
-                                        source_d: reg_alloc.instruction_registers[d],
-                                    },
-                                    aspan.combine(bspan).combine(cspan).combine(dspan),
-                                ));
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                }
                 ir::InstructionKind::NoOp => {}
                 ir::InstructionKind::Copy(source) => {
                     let dest_reg = reg_alloc.instruction_registers[inst_id];
@@ -653,6 +591,78 @@ fn codegen_function<S: Clone + Eq + Hash>(
                 ir::InstructionKind::OpenCallScope(_) => {
                     vm_instructions.push((Instruction::PushStackFrame {}, inst.span));
                 }
+                ir::InstructionKind::StackPush(first_call_scope, first_source) => {
+                    // Consolidate all consecutive `PushStack` instructions of the same call scope
+                    // into minimal instructions.
+
+                    let mut sources = vec![(first_source, inst.span)];
+                    while let Some(&(_, &inst_id)) = inst_iter.peek() {
+                        let inst = &ir.instructions[inst_id];
+                        let ir::InstructionKind::StackPush(scope, source) = inst.kind else {
+                            break;
+                        };
+                        if scope != first_call_scope {
+                            break;
+                        }
+                        inst_iter.next();
+                        sources.push((source, inst.span));
+                    }
+
+                    for chunk in sources.chunks(4) {
+                        match *chunk {
+                            [] => {}
+                            [(a, aspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush {
+                                        source: reg_alloc.instruction_registers[a],
+                                    },
+                                    aspan,
+                                ));
+                            }
+                            [(a, aspan), (b, bspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush2 {
+                                        source_a: reg_alloc.instruction_registers[a],
+                                        source_b: reg_alloc.instruction_registers[b],
+                                    },
+                                    aspan.combine(bspan),
+                                ));
+                            }
+                            [(a, aspan), (b, bspan), (c, cspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush3 {
+                                        source_a: reg_alloc.instruction_registers[a],
+                                        source_b: reg_alloc.instruction_registers[b],
+                                        source_c: reg_alloc.instruction_registers[c],
+                                    },
+                                    aspan.combine(bspan).combine(cspan),
+                                ));
+                            }
+                            [(a, aspan), (b, bspan), (c, cspan), (d, dspan)] => {
+                                vm_instructions.push((
+                                    Instruction::StackPush4 {
+                                        source_a: reg_alloc.instruction_registers[a],
+                                        source_b: reg_alloc.instruction_registers[b],
+                                        source_c: reg_alloc.instruction_registers[c],
+                                        source_d: reg_alloc.instruction_registers[d],
+                                    },
+                                    aspan.combine(bspan).combine(cspan).combine(dspan),
+                                ));
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                ir::InstructionKind::StackPushArgs { first_arg, .. } => {
+                    vm_instructions.push((
+                        Instruction::StackPushArgs {
+                            first_index: first_arg
+                                .try_into()
+                                .map_err(|_| ProtoGenError::StackIndexOutOfRange)?,
+                        },
+                        inst.span,
+                    ));
+                }
                 ir::InstructionKind::Call {
                     func,
                     stack_base,
@@ -680,7 +690,7 @@ fn codegen_function<S: Clone + Eq + Hash>(
                         vm_instructions.push((Instruction::JoinStackFrame {}, inst.span));
                     }
                 }
-                ir::InstructionKind::GetStack(_, index) => {
+                ir::InstructionKind::StackGet(_, index) => {
                     vm_instructions.push((
                         Instruction::StackGet {
                             dest: reg_alloc.instruction_registers[inst_id],
