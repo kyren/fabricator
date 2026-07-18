@@ -403,6 +403,9 @@ enum SerializeInstruction {
         source_c: RegIdx,
         source_d: RegIdx,
     },
+    StackPushArgs {
+        first_index: StackIdx,
+    },
     StackGet {
         dest: RegIdx,
         index: StackIdx,
@@ -733,6 +736,9 @@ impl SerializeInstruction {
                 source_b: source_b.0,
                 source_c: source_c.0,
                 source_d: source_d.0,
+            },
+            Instruction::StackPushArgs { first_index } => SerializeInstruction::StackPushArgs {
+                first_index: first_index.0,
             },
             Instruction::StackGet { dest, index } => SerializeInstruction::StackGet {
                 dest: dest.0,
@@ -1092,6 +1098,9 @@ impl SerializeInstruction {
                 source_b: source_b.into(),
                 source_c: source_c.into(),
                 source_d: source_d.into(),
+            },
+            SerializeInstruction::StackPushArgs { first_index } => Instruction::StackPushArgs {
+                first_index: first_index.into(),
             },
             SerializeInstruction::StackGet { dest, index } => Instruction::StackGet {
                 dest: dest.into(),

@@ -13,7 +13,6 @@ pub mod ssa_conversion;
 pub mod types_and_effects;
 pub mod variable_liveness;
 pub mod vec_change_set;
-pub mod verify_arguments;
 pub mod verify_references;
 pub mod verify_upvars;
 
