@@ -103,11 +103,14 @@ impl<'gc, 'a> Stack<'gc, 'a> {
         V::from_value(ctx, self.get(i))
     }
 
+    /// Drain the entire stack, converting all stack values into `V` which must implement
+    /// [`FromMultiValue`].
     #[inline]
     pub fn consume<V: FromMultiValue<'gc>>(&mut self, ctx: Context<'gc>) -> Result<V, TypeError> {
         V::from_multi_value(ctx, self.drain(..))
     }
 
+    /// Replace the entire stack with the given `v` which must implement [`IntoMultiValue`].
     #[inline]
     pub fn replace(&mut self, ctx: Context<'gc>, v: impl IntoMultiValue<'gc>) {
         self.clear();
