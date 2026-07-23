@@ -372,6 +372,7 @@ impl<V> ops::Index<Id> for IdMap<V> {
     type Output = V;
 
     #[inline]
+    #[track_caller]
     fn index(&self, id: Id) -> &V {
         self.get(id).expect("no such id in `IdMap`")
     }
@@ -379,6 +380,7 @@ impl<V> ops::Index<Id> for IdMap<V> {
 
 impl<V> ops::IndexMut<Id> for IdMap<V> {
     #[inline]
+    #[track_caller]
     fn index_mut(&mut self, id: Id) -> &mut Self::Output {
         self.get_mut(id).expect("no such id in `IdMap`")
     }
@@ -661,6 +663,7 @@ impl<V> ops::Index<Id> for SecondaryMap<V> {
     type Output = V;
 
     #[inline]
+    #[track_caller]
     fn index(&self, id: Id) -> &V {
         self.get(id).expect("no such id in `SecondaryMap`")
     }
