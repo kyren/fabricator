@@ -110,12 +110,17 @@ pub struct BuiltIns<'gc> {
 
 impl<'gc> BuiltIns<'gc> {
     pub const BIND: &'static str = "bind";
+
     pub const PCALL: &'static str = "pcall";
+
     pub const GET_SUPER: &'static str = "get_super";
     pub const SET_SUPER: &'static str = "set_super";
+
     pub const INIT_CONSTRUCTOR_SUPER: &'static str = "__init_constructor_super";
     pub const GET_CONSTRUCTOR_SUPER: &'static str = "__get_constructor_super";
+
     pub const WITH_LOOP_ITER: &'static str = "__with_loop_iter";
+
     pub const GET_MULTI_INDEX: &'static str = "__get_multi_index";
     pub const SET_MULTI_INDEX: &'static str = "__set_multi_index";
 
@@ -133,19 +138,6 @@ impl<'gc> BuiltIns<'gc> {
                         "self value must be an object, userdata, or undefined",
                     )),
                 }
-            }),
-
-            get_super: Callback::from_fn(mc, |ctx, mut exec| {
-                let obj: Object = exec.stack().consume(ctx)?;
-                exec.stack().replace(ctx, obj.parent());
-                Ok(())
-            }),
-
-            set_super: Callback::from_fn(mc, |ctx, mut exec| {
-                let (obj, parent): (Object, Option<Object>) = exec.stack().consume(ctx)?;
-                obj.set_parent(&ctx, parent)?;
-                exec.stack().replace(ctx, obj);
-                Ok(())
             }),
 
             pcall: Callback::from_fn(mc, |ctx, mut exec| {
@@ -169,6 +161,19 @@ impl<'gc> BuiltIns<'gc> {
                         exec.stack().replace(ctx, (false, err.to_value(ctx)));
                     }
                 }
+                Ok(())
+            }),
+
+            get_super: Callback::from_fn(mc, |ctx, mut exec| {
+                let obj: Object = exec.stack().consume(ctx)?;
+                exec.stack().replace(ctx, obj.parent());
+                Ok(())
+            }),
+
+            set_super: Callback::from_fn(mc, |ctx, mut exec| {
+                let (obj, parent): (Object, Option<Object>) = exec.stack().consume(ctx)?;
+                obj.set_parent(&ctx, parent)?;
+                exec.stack().replace(ctx, obj);
                 Ok(())
             }),
 
