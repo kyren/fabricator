@@ -96,4 +96,13 @@ function test_varargs() {
 }
 test_varargs();
 
+function test_array_pack_unpack() {
+    let a, b, c, d = array_unpack([1, 2, 3]);
+    assert(a == 1, b == 2, c == 3, d == undefined);
+
+    let a = array_pack(1, 2, 3);
+    assert(a[0] == 1, a[1] == 2, a[2] == 3, array_length(a) == 3);
+}
+test_array_pack_unpack();
+
 return true;

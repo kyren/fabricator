@@ -41,6 +41,42 @@ pub fn array_length<'gc>(
     Ok(array.len() as isize)
 }
 
+/// Takes all provided arguments and converts them into a single array.
+///
+/// ```fml
+/// let arr = pack(0, 1, 2);
+///
+/// assert(arr[0] == 0, arr[1] == 1, arr[2] == 2);
+/// ```
+pub fn array_pack<'gc>(
+    ctx: vm::Context<'gc>,
+    mut exec: vm::Execution<'gc, '_>,
+) -> Result<(), vm::TypeError> {
+    let mut stack = exec.stack();
+    let arr = vm::Array::from_iter(&ctx, stack.iter());
+    stack.replace(ctx, arr);
+    Ok(())
+}
+
+/// Takes a single array argument and returns each array element as a separate return.
+///
+/// This is the reverse of `array_pack`.
+///
+/// ```fml
+/// let a, b, c = unpack([1, 2, 3]);
+///
+/// assert(a == 0, b == 1, c == 2);
+/// ```
+pub fn array_unpack<'gc>(
+    ctx: vm::Context<'gc>,
+    mut exec: vm::Execution<'gc, '_>,
+) -> Result<(), vm::TypeError> {
+    let mut stack = exec.stack();
+    let arr: vm::Array = stack.consume(ctx)?;
+    stack.extend(arr.borrow().iter());
+    Ok(())
+}
+
 pub fn array_delete<'gc>(
     ctx: vm::Context<'gc>,
     (array, index, count): (vm::Array<'gc>, isize, isize),
@@ -215,6 +251,8 @@ pub fn array_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "array_create", array_create);
     lib.insert_exec_callback(ctx, "array_create_ext", array_create_ext);
     lib.insert_callback(ctx, "array_length", array_length);
+    lib.insert_exec_callback(ctx, "array_pack", array_pack);
+    lib.insert_exec_callback(ctx, "array_unpack", array_unpack);
     lib.insert_callback(ctx, "array_delete", array_delete);
     lib.insert_callback(ctx, "array_get_index", array_get_index);
     lib.insert_exec_callback(ctx, "array_push", array_push);
