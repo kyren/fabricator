@@ -1,4 +1,6 @@
-use fabricator_stdlib::StdlibContext as _;
+use std::convert::Infallible;
+
+use fabricator_stdlib::{StdlibContext as _, util::MagicExt};
 use fabricator_vm as vm;
 use gc_arena::{Collect, Gc, Rootable};
 
@@ -18,25 +20,17 @@ impl<'gc> TestingStdlibContext<'gc> for vm::Context<'gc> {
                 let mut lib = vm::MagicSet::new();
                 lib.merge(&ctx.stdlib());
 
-                let assert = vm::Callback::from_fn(&ctx, |_, mut exec| {
+                lib.insert_exec_callback(ctx, "assert", |_, mut exec| {
                     let stack = exec.stack();
                     for i in 0..stack.len() {
                         if !stack.get(i).cast_bool() {
-                            return Err(vm::RuntimeError::msg("assert failed"));
+                            return Err(vm::RuntimeError::msg(format!("assert {i} failed")));
                         }
                     }
                     Ok(())
                 });
-                lib.insert(
-                    ctx.intern("assert"),
-                    vm::magic::MagicConstant::new_ptr(&ctx, assert),
-                );
 
-                let black_box = vm::Callback::from_fn(&ctx, |_, _| Ok(()));
-                lib.insert(
-                    ctx.intern("black_box"),
-                    vm::magic::MagicConstant::new_ptr(&ctx, black_box),
-                );
+                lib.insert_exec_callback(ctx, "black_box", |_, _| Ok::<_, Infallible>(()));
 
                 TestingStdlibSingleton(Gc::new(&ctx, lib))
             }
