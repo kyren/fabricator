@@ -27,7 +27,7 @@ pub fn fold_constants<S: Eq + Clone>(ir: &mut ir::Function<S>) {
                 ir::InstructionKind::UnOp { op, source } => {
                     if let Some(c) = get_constant(source) {
                         new_inst = match op {
-                            ir::UnOp::IsDefined => Some(Constant::Boolean(!c.is_undefined())),
+                            ir::UnOp::IsDefined => Some(Constant::Boolean(c.is_defined())),
                             ir::UnOp::IsUndefined => Some(Constant::Boolean(c.is_undefined())),
                             ir::UnOp::Test => Some(Constant::Boolean(!c.cast_bool())),
                             ir::UnOp::Not => Some(Constant::Boolean(!c.cast_bool())),
@@ -166,7 +166,7 @@ pub fn fold_constants<S: Eq + Clone>(ir: &mut ir::Function<S>) {
             };
 
             let const_cond = match cond {
-                ir::BranchCondition::IsDefined(a) => get_constant(a).map(|c| !c.is_undefined()),
+                ir::BranchCondition::IsDefined(a) => get_constant(a).map(|c| c.is_defined()),
                 ir::BranchCondition::IsUndefined(a) => get_constant(a).map(|c| c.is_undefined()),
                 ir::BranchCondition::IsTrue(a) => get_constant(a).map(|c| c.cast_bool()),
                 ir::BranchCondition::IsFalse(a) => get_constant(a).map(|c| !c.cast_bool()),

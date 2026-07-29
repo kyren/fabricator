@@ -63,7 +63,7 @@ pub(super) enum Next<'gc> {
     Call {
         function: Function<'gc>,
         args_bottom: usize,
-        this: Value<'gc>,
+        this: Option<Value<'gc>>,
     },
     Return {
         returns_bottom: usize,
@@ -367,9 +367,9 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             &self.ctx,
             proto,
             if bind_this {
-                self.get_this()
+                Some(self.get_this())
             } else {
-                Value::Undefined
+                None
             },
             Gc::new(&self.ctx, heap.into_boxed_slice()),
         )?
@@ -549,7 +549,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
 
     #[inline]
     fn is_defined(&mut self, dest: RegIdx, arg: RegIdx) -> Result<(), Self::Error> {
-        self.registers[dest.index()] = (!self.registers[arg.index()].is_undefined()).into();
+        self.registers[dest.index()] = self.registers[arg.index()].is_defined().into();
         Ok(())
     }
 
@@ -1120,7 +1120,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             .copied()
             .ok_or_else(|| OpError::InvalidStackFrames { op: "call" })?;
 
-        let this = this.map(|r| self.registers[r.index()]).unwrap_or_default();
+        let this = this.map(|r| self.registers[r.index()]);
 
         Ok(ControlFlow::Break(Next::Call {
             function: func,

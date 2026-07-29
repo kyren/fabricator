@@ -517,7 +517,7 @@ impl<'gc> Compiler<'gc> {
 
                 let proto = optimize_and_generate_proto(compile_settings, &mut ir, &magic);
                 let vm_proto = proto.into_vm(&ctx, chunk, magic);
-                let closure = vm::Closure::new(&ctx, vm_proto, vm::Value::Undefined).unwrap();
+                let closure = vm::Closure::new(&ctx, vm_proto, None).unwrap();
 
                 all_prototypes.push((ir, vm_proto));
 

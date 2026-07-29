@@ -240,7 +240,7 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         callback: Callback<'gc>,
     ) -> Result<(), RuntimeError> {
         self.thread
-            .call_callback(ctx, callback, self.stack_bottom, None)
+            .call_callback(ctx, callback, self.stack_bottom, callback.this())
     }
 
     /// Call a `Function` within a callback.
@@ -526,10 +526,8 @@ impl<'gc> ThreadState<'gc> {
 
             // Push the closure's bound `self` value, if it has one.
             let this_bottom = self.this.len();
-            if let closure_this = closure.this()
-                && !closure_this.is_undefined()
-            {
-                self.this.push(closure_this)
+            if let Some(this) = closure.this() {
+                self.this.push(this)
             }
 
             let heap_bottom = self.heap.len();
@@ -684,9 +682,7 @@ impl<'gc> ThreadState<'gc> {
                             // Push the closure's bound `self` value or the provided `self` if
                             // either is defined.
                             let this_bottom = self.this.len();
-                            if let this = closure.this().null_coalesce(this)
-                                && !this.is_undefined()
-                            {
+                            if let Some(this) = closure.this().or(this) {
                                 self.this.push(this)
                             }
 
@@ -721,15 +717,7 @@ impl<'gc> ThreadState<'gc> {
                         }
                         Function::Callback(callback) => {
                             let stack_bottom = frame.stack_bottom + args_bottom;
-
-                            // Push the provided `self` value if the callback does not have
-                            // one bound, otherwise the bound `self` value will be set by
-                            // `Callback::call`.
-                            let this = if !this.is_undefined() && callback.this().is_undefined() {
-                                Some(this)
-                            } else {
-                                None
-                            };
+                            let this = callback.this().or(this);
 
                             if let Err(err) = self.call_callback(ctx, callback, stack_bottom, this)
                             {
@@ -823,7 +811,7 @@ impl<'gc> ThreadState<'gc> {
             stack_bottom,
             this_bottom,
         };
-        let ret = callback.call(
+        let ret = callback.function().call(
             ctx,
             if let Some(this) = with_this {
                 exec.with_this(this)

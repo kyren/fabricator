@@ -81,7 +81,7 @@ fn run_code(
             name,
             code,
         )?;
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
         let thread = vm::Thread::new(&ctx);
         thread.set_hook(&ctx, VmLimiter::new());

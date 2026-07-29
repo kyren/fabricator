@@ -43,7 +43,7 @@ fn test_vm_call_return_hooks() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
         #[derive(Collect)]
         #[collect(require_static)]
@@ -134,7 +134,7 @@ fn test_vm_return_hook_on_error() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
         #[derive(Collect)]
         #[collect(require_static)]
@@ -219,7 +219,7 @@ fn test_vm_call_return_hook_count_with_error() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
         #[derive(Debug)]
         struct NoCallbacksAllowed;
@@ -302,7 +302,7 @@ fn test_vm_step_hook() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
         #[derive(Debug)]
         struct ExecLimitError;
