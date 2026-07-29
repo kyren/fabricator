@@ -2,12 +2,13 @@ use std::{fs::File, io::Read, path::PathBuf, process::ExitCode};
 
 use anyhow::Error;
 use clap::{Parser, Subcommand};
+use fabricator_cli::TestingStdlibContext;
 use fabricator_compiler::{
     CompileError, CompileSettings,
     compiler::{CompileErrorKind, Compiler, ImportItems},
     parser::{ParseError, ParseErrorKind},
 };
-use fabricator_stdlib::{StdlibContext as _, string::debug_value};
+use fabricator_stdlib::string::debug_value;
 use fabricator_vm as vm;
 
 #[derive(Parser)]
@@ -39,13 +40,12 @@ fn main() -> Result<ExitCode, Error> {
                 let output = Compiler::compile_chunk(
                     ctx,
                     "",
-                    ImportItems::with_magic(&ctx, ctx.stdlib()),
+                    ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
                     settings,
                     path.to_string_lossy().into_owned(),
                     &code,
                 )?;
-                let closure =
-                    vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+                let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
                 let thread = vm::Thread::new(&ctx);
                 Ok(match thread.run(ctx, closure) {
@@ -67,7 +67,7 @@ fn main() -> Result<ExitCode, Error> {
                 let output = Compiler::compile_chunk(
                     ctx,
                     "",
-                    ImportItems::with_magic(&ctx, ctx.stdlib()),
+                    ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
                     settings,
                     path.to_string_lossy().into_owned(),
                     &code,
@@ -105,8 +105,8 @@ fn main() -> Result<ExitCode, Error> {
 
             let settings = CompileSettings::strict().set_optimization_passes(cli.opt_level);
 
-            let mut imports =
-                interpreter.enter(|ctx| ctx.stash(ImportItems::with_magic(&ctx, ctx.stdlib())));
+            let mut imports = interpreter
+                .enter(|ctx| ctx.stash(ImportItems::with_magic(&ctx, ctx.testing_stdlib())));
 
             fn is_end_of_stream_err(e: &CompileError) -> bool {
                 matches!(
@@ -156,12 +156,8 @@ fn main() -> Result<ExitCode, Error> {
                             Ok(output) => {
                                 imports = ctx.stash(output.exported_imports);
 
-                                let closure = vm::Closure::new(
-                                    &ctx,
-                                    output.chunk_prototype,
-                                    vm::Value::Undefined,
-                                )
-                                .unwrap();
+                                let closure =
+                                    vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
                                 let thread = ctx.fetch(&thread);
                                 thread.exec(ctx, |mut exec| {

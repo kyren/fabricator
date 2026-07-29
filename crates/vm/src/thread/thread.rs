@@ -234,7 +234,7 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         ctx: Context<'gc>,
         closure: Closure<'gc>,
     ) -> Result<(), VmError<'gc>> {
-        self.thread.call(ctx, closure, self.stack_bottom)
+        self.thread.call_closure(ctx, closure, self.stack_bottom)
     }
 
     #[inline]
@@ -246,9 +246,7 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         self.thread.frames.push(Frame::Callback(callback));
 
         // Push the callback's bound `self` value if it has one.
-        let mut exec = if let this = callback.this()
-            && !this.is_undefined()
-        {
+        let mut exec = if let Some(this) = callback.this() {
             self.with_this(this)
         } else {
             self.reborrow()
@@ -263,7 +261,14 @@ impl<'gc, 'a> Execution<'gc, 'a> {
             )?;
         }
 
-        let res = callback.call(ctx, exec.reborrow());
+        let res = callback.function().call(
+            ctx,
+            if let Some(this) = callback.this() {
+                exec.with_this(this)
+            } else {
+                exec.reborrow()
+            },
+        );
 
         if let Some(hook_state) = &mut exec.thread.hook_state {
             hook_state.hook.on_return(
@@ -546,7 +551,7 @@ impl<'gc> Frame<'gc> {
 
 impl<'gc> ThreadState<'gc> {
     // Call a closure with arguments starting at `stack_bottom`.
-    fn call(
+    fn call_closure(
         &mut self,
         ctx: Context<'gc>,
         closure: Closure<'gc>,
@@ -562,10 +567,8 @@ impl<'gc> ThreadState<'gc> {
 
             // Push the closure's bound `self` value, if it has one.
             let this_bottom = self.this.len();
-            if let closure_this = closure.this()
-                && !closure_this.is_undefined()
-            {
-                self.this.push(closure_this)
+            if let Some(this) = closure.this() {
+                self.this.push(this)
             }
 
             let heap_bottom = self.heap.len();
@@ -704,9 +707,7 @@ impl<'gc> ThreadState<'gc> {
                                 // Push the closure's bound `self` value or the provided `self` if
                                 // either is defined.
                                 let this_bottom = self.this.len();
-                                if let this = closure.this().null_coalesce(this)
-                                    && !this.is_undefined()
-                                {
+                                if let Some(this) = closure.this().or(this) {
                                     self.this.push(this)
                                 }
 
@@ -747,8 +748,10 @@ impl<'gc> ThreadState<'gc> {
                                 // one bound, otherwise the bound `self` value will be pushed by
                                 // `Execution::call_callback`.
                                 let this_bottom = self.this.len();
-                                if !this.is_undefined() && callback.this().is_undefined() {
-                                    self.this.push(this)
+                                if let Some(this) = this
+                                    && callback.this().is_none()
+                                {
+                                    self.this.push(this);
                                 }
 
                                 if let Err(err) = (Execution {

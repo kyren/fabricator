@@ -15,14 +15,14 @@ pub enum Function<'gc> {
 }
 
 impl<'gc> Function<'gc> {
-    pub fn this(self) -> Value<'gc> {
+    pub fn this(self) -> Option<Value<'gc>> {
         match self {
             Function::Closure(closure) => closure.this(),
             Function::Callback(callback) => callback.this(),
         }
     }
 
-    pub fn rebind(self, mc: &Mutation<'gc>, this: Value<'gc>) -> Self {
+    pub fn rebind(self, mc: &Mutation<'gc>, this: Option<Value<'gc>>) -> Self {
         match self {
             Function::Closure(closure) => Function::Closure(closure.rebind(mc, this)),
             Function::Callback(callback) => Function::Callback(callback.rebind(mc, this)),
@@ -184,8 +184,8 @@ impl<'gc> From<Function<'gc>> for Value<'gc> {
 }
 
 impl<'gc> Value<'gc> {
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn type_name(self) -> &'static str {
         match self {
             Value::Undefined => "undefined",
@@ -201,14 +201,23 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
+    /// Returns `true` if `self` is `Value::Undefined`.
     #[must_use]
+    #[inline]
     pub fn is_undefined(self) -> bool {
         matches!(self, Value::Undefined)
     }
 
-    #[inline]
+    /// The inverse of [`Value::is_undefined`], returns `true` if `self` is anything other than
+    /// `Value::Undefined`.
     #[must_use]
+    #[inline]
+    pub fn is_defined(self) -> bool {
+        !matches!(self, Value::Undefined)
+    }
+
+    #[must_use]
+    #[inline]
     pub fn as_boolean(self) -> Option<bool> {
         match self {
             Value::Boolean(b) => Some(b),
@@ -216,8 +225,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_integer(self) -> Option<i64> {
         match self {
             Value::Integer(i) => Some(i),
@@ -225,8 +234,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_float(self) -> Option<f64> {
         match self {
             Value::Float(f) => Some(f),
@@ -234,8 +243,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_number(self) -> Option<Number> {
         match self {
             Value::Integer(i) => Some(Number::Integer(i)),
@@ -244,8 +253,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_string(self) -> Option<String<'gc>> {
         match self {
             Value::String(s) => Some(s),
@@ -253,8 +262,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_object(self) -> Option<Object<'gc>> {
         match self {
             Value::Object(s) => Some(s),
@@ -262,8 +271,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_array(self) -> Option<Array<'gc>> {
         match self {
             Value::Array(s) => Some(s),
@@ -271,8 +280,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_closure(self) -> Option<Closure<'gc>> {
         match self {
             Value::Closure(c) => Some(c),
@@ -280,8 +289,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_callback(self) -> Option<Callback<'gc>> {
         match self {
             Value::Callback(c) => Some(c),
@@ -289,8 +298,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_function(self) -> Option<Function<'gc>> {
         match self {
             Value::Closure(closure) => Some(Function::Closure(closure)),
@@ -299,8 +308,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_userdata(self) -> Option<UserData<'gc>> {
         match self {
             Value::UserData(userdata) => Some(userdata),
@@ -311,8 +320,8 @@ impl<'gc> Value<'gc> {
     /// Return numeric values as integers or floats.
     ///
     /// Integers and floats are returned as themselves, booleans return integral 0 or 1.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn to_number(self) -> Option<Number> {
         match self {
             Value::Boolean(b) => Some(Number::Integer(if b { 1 } else { 0 })),
@@ -327,8 +336,8 @@ impl<'gc> Value<'gc> {
     /// Boolean values are returned as themselves, `Value::Undefined` returns false, integers and
     /// floats return true if they are greater than 0.5 and false otherwise, and all other value
     /// types return true.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn cast_bool(self) -> bool {
         match self {
             Value::Undefined => false,
@@ -343,8 +352,8 @@ impl<'gc> Value<'gc> {
     ///
     /// Integers are returned as themselves, booleans return 0 or 1, and floats return their integer
     /// part.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn cast_integer(self) -> Option<i64> {
         self.to_number().map(Number::cast_integer)
     }
@@ -353,8 +362,8 @@ impl<'gc> Value<'gc> {
     ///
     /// Floats are returned as themselves, booleans return 0.0 or 1.0, and integers are converted
     /// to floats.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn cast_float(self) -> Option<f64> {
         self.to_number().map(Number::cast_float)
     }
@@ -363,8 +372,8 @@ impl<'gc> Value<'gc> {
     ///
     /// Strings are returned as themselves, booleans return either `"true"` or `"false"`, numeric
     /// values are printed, and userdata values are coerced if they implement string coercion.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn coerce_string(self, ctx: Context<'gc>) -> Option<String<'gc>> {
         match self {
             Value::Boolean(b) => Some(ctx.intern(if b { "true" } else { "false" })),
@@ -380,8 +389,8 @@ impl<'gc> Value<'gc> {
     ///
     /// This is similar to [`Value::cast_integer`] with the addition of parsing strings as integers
     /// if possible, and coercing userdata to integers if they implement integer coersion.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn coerce_integer(self, ctx: Context<'gc>) -> Option<i64> {
         if let Some(i) = self.cast_integer() {
             Some(i)
@@ -398,8 +407,8 @@ impl<'gc> Value<'gc> {
     ///
     /// This is similar to [`Value::cast_float`] with the addition of parsing strings as floats if
     /// possible, and coercing userdata to floats if they implement float coersion.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn coerce_float(self, ctx: Context<'gc>) -> Option<f64> {
         if let Some(i) = self.cast_float() {
             Some(i)
@@ -414,8 +423,8 @@ impl<'gc> Value<'gc> {
 
     /// If both values are numeric, return the two values added together. If both values are
     /// strings, appends them.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn add_or_append(self, ctx: Context<'gc>, other: Value<'gc>) -> Option<Value<'gc>> {
         if let Some(r) = self.add(other) {
             Some(r)
@@ -426,50 +435,50 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn negate(self) -> Option<Value<'gc>> {
         Some(self.to_number()?.negate().into())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn add(self, other: Value<'gc>) -> Option<Value<'gc>> {
         Some(self.to_number()?.add(other.to_number()?).into())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn sub(self, other: Value<'gc>) -> Option<Value<'gc>> {
         Some(self.to_number()?.sub(other.to_number()?).into())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn mult(self, other: Value<'gc>) -> Option<Value<'gc>> {
         Some(self.to_number()?.mult(other.to_number()?).into())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn div(self, other: Value<'gc>) -> Option<Value<'gc>> {
         Some(self.to_number()?.div(other.to_number()?).into())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn idiv(self, other: Value<'gc>) -> Option<i64> {
         Some(self.to_number()?.idiv(other.to_number()?).into())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn rem(self, other: Value<'gc>) -> Option<Value<'gc>> {
         Some(self.to_number()?.rem(other.to_number()?).into())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn equal(self, other: Value<'gc>) -> bool {
         match (self, other) {
             (Value::Undefined, Value::Undefined) => true,
@@ -492,8 +501,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn less_than(self, other: Value<'gc>) -> Option<bool> {
         if let (Some(a), Some(b)) = (self.to_number(), other.to_number()) {
             Some(a < b)
@@ -502,8 +511,8 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn less_equal(self, other: Value<'gc>) -> Option<bool> {
         if let (Some(a), Some(b)) = (self.to_number(), other.to_number()) {
             Some(a <= b)
@@ -512,62 +521,62 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn and(&self, other: Value<'gc>) -> bool {
         self.cast_bool() && other.cast_bool()
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn or(&self, other: Value<'gc>) -> bool {
         self.cast_bool() || other.cast_bool()
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn xor(&self, other: Value<'gc>) -> bool {
         self.cast_bool() ^ other.cast_bool()
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn bit_negate(&self) -> Option<i64> {
         Some(self.to_number()?.bit_negate())
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn bit_and(&self, other: Value<'gc>) -> Option<i64> {
         Some(self.to_number()?.bit_and(other.to_number()?))
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn bit_or(&self, other: Value<'gc>) -> Option<i64> {
         Some(self.to_number()?.bit_or(other.to_number()?))
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn bit_xor(&self, other: Value<'gc>) -> Option<i64> {
         Some(self.to_number()?.bit_xor(other.to_number()?))
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn bit_shift_left(&self, other: Value<'gc>) -> Option<i64> {
         Some(self.to_number()?.bit_shift_left(other.to_number()?))
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn bit_shift_right(&self, other: Value<'gc>) -> Option<i64> {
         Some(self.to_number()?.bit_shift_right(other.to_number()?))
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn null_coalesce(self, other: Value<'gc>) -> Value<'gc> {
         if self.is_undefined() { other } else { self }
     }
