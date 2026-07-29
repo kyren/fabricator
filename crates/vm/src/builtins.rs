@@ -127,10 +127,10 @@ impl<'gc> BuiltIns<'gc> {
     fn new(mc: &Mutation<'gc>) -> Self {
         Self {
             bind: Callback::from_fn(mc, |ctx, mut exec| {
-                let (obj, func): (Value, Function) = exec.stack().consume(ctx)?;
+                let (obj, func): (Option<Value>, Function) = exec.stack().consume(ctx)?;
 
                 match obj {
-                    obj @ (Value::Undefined | Value::Object(_) | Value::UserData(_)) => {
+                    obj @ (None | Some(Value::Object(_) | Value::UserData(_))) => {
                         exec.stack().replace(ctx, func.rebind(&ctx, obj));
                         Ok(())
                     }

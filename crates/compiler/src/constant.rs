@@ -82,14 +82,20 @@ impl<S> From<Number> for Constant<S> {
 }
 
 impl<S> Constant<S> {
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn is_undefined(&self) -> bool {
         matches!(&self, Constant::Undefined)
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
+    pub fn is_defined(&self) -> bool {
+        !matches!(&self, Constant::Undefined)
+    }
+
+    #[must_use]
+    #[inline]
     pub fn as_boolean(&self) -> Option<bool> {
         match self {
             Constant::Boolean(b) => Some(*b),
@@ -97,8 +103,8 @@ impl<S> Constant<S> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_integer(&self) -> Option<i64> {
         match self {
             Constant::Integer(i) => Some(*i),
@@ -106,8 +112,8 @@ impl<S> Constant<S> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_float(&self) -> Option<f64> {
         match self {
             Constant::Float(f) => Some(*f),
@@ -115,8 +121,8 @@ impl<S> Constant<S> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn as_string(&self) -> Option<&S> {
         match self {
             Constant::String(s) => Some(s),
@@ -124,8 +130,8 @@ impl<S> Constant<S> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn to_number(&self) -> Option<Number> {
         match self {
             Constant::Boolean(b) => Some(Number::Integer(if *b { 1 } else { 0 })),
@@ -135,8 +141,8 @@ impl<S> Constant<S> {
         }
     }
 
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn cast_bool(&self) -> bool {
         match *self {
             Constant::Undefined => false,

@@ -45,8 +45,7 @@ fn main() -> Result<ExitCode, Error> {
                     path.to_string_lossy().into_owned(),
                     &code,
                 )?;
-                let closure =
-                    vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+                let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
                 let thread = vm::Thread::new(&ctx);
                 Ok(match thread.run(ctx, closure) {
@@ -157,12 +156,8 @@ fn main() -> Result<ExitCode, Error> {
                             Ok(output) => {
                                 imports = ctx.stash(output.exported_imports);
 
-                                let closure = vm::Closure::new(
-                                    &ctx,
-                                    output.chunk_prototype,
-                                    vm::Value::Undefined,
-                                )
-                                .unwrap();
+                                let closure =
+                                    vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
 
                                 let thread = ctx.fetch(&thread);
                                 thread.exec(ctx, |mut exec| {
