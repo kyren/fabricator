@@ -166,14 +166,14 @@ fn get_extension_callback<'gc>(
                             vm::Callback::new(
                                 mc,
                                 FfiFn::<FfiNumber, ($($arg_type,)*)>::new(library, symbol)?,
-                                vm::Value::Undefined,
+                                None,
                             )
                         }
                         FfiType::Pointer => {
                             vm::Callback::new(
                                 mc,
                                 FfiFn::<FfiPointer, ($($arg_type,)*)>::new(library, symbol)?,
-                                vm::Value::Undefined,
+                                None,
                             )
                         }
                     }

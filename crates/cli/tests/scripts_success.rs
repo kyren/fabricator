@@ -24,7 +24,7 @@ pub fn run_code(
             name,
             code,
         )?;
-        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, None).unwrap();
 
         let thread = vm::Thread::new(&ctx);
         thread.exec(ctx, |mut exec| {

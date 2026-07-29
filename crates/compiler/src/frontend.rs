@@ -616,7 +616,7 @@ impl<'gc> PrototypeOutput<vm::String<'gc>> {
                 chunks.get(chunk_index).ok_or(VmOutputError::BadChunkIdx)?.0,
                 new_magic,
             )?;
-            let closure = vm::Closure::new(&ctx, vm_proto, vm::Value::Undefined).unwrap();
+            let closure = vm::Closure::new(&ctx, vm_proto, None).unwrap();
 
             vm::MagicSet::replace(
                 magic_write,

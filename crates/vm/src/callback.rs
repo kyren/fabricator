@@ -11,8 +11,8 @@ pub trait CallbackFn<'gc> {
 #[derive(Copy, Clone, Collect)]
 #[collect(no_drop)]
 pub struct CallbackInner<'gc> {
-    callback_fn: Gc<'gc, dyn CallbackFn<'gc>>,
-    this: Value<'gc>,
+    function: Gc<'gc, dyn CallbackFn<'gc>>,
+    this: Option<Value<'gc>>,
 }
 
 #[derive(Copy, Clone, Collect)]
@@ -23,46 +23,38 @@ impl<'gc> Callback<'gc> {
     pub fn new<C: CallbackFn<'gc> + Collect<'gc> + 'gc>(
         mc: &Mutation<'gc>,
         callback: C,
-        this: Value<'gc>,
+        this: Option<Value<'gc>>,
     ) -> Self {
-        let callback_fn = gc_arena::unsize!(Gc::new(mc, callback) => dyn CallbackFn);
-        Self(Gc::new(mc, CallbackInner { callback_fn, this }))
+        let function = gc_arena::unsize!(Gc::new(mc, callback) => dyn CallbackFn);
+        Self(Gc::new(mc, CallbackInner { function, this }))
     }
 
-    /// Call the contained callback.
-    ///
-    /// If there is a `self` object bound to the callback, then the provided `exec` will be rebound
-    /// with it.
+    /// Returns the currently bound `self` object, or `Value::Undefined` if one is not set.
+    #[must_use]
     #[inline]
-    pub fn call(self, ctx: Context<'gc>, mut exec: Execution<'gc, '_>) -> Result<(), RuntimeError> {
-        self.0.callback_fn.call(
-            ctx,
-            if self.0.this.is_undefined() {
-                exec
-            } else {
-                exec.with_this(self.0.this)
-            },
-        )
+    pub fn this(self) -> Option<Value<'gc>> {
+        self.0.this
+    }
+
+    /// Returns the bare, inner callback function.
+    #[must_use]
+    #[inline]
+    pub fn function(self) -> Gc<'gc, dyn CallbackFn<'gc>> {
+        self.0.function
     }
 
     /// Return a clone of this callback with the embedded `self` value changed to the provided one.
     ///
     /// If `Value::Undefined` is provided, then the bound `self` object will be removed.
     #[inline]
-    pub fn rebind(self, mc: &Mutation<'gc>, this: Value<'gc>) -> Callback<'gc> {
+    pub fn rebind(self, mc: &Mutation<'gc>, this: Option<Value<'gc>>) -> Callback<'gc> {
         Self(Gc::new(
             mc,
             CallbackInner {
-                callback_fn: self.0.callback_fn,
+                function: self.0.function,
                 this,
             },
         ))
-    }
-
-    /// Returns the currently bound `self` object, or `Value::Undefined` if one is not set.
-    #[inline]
-    pub fn this(self) -> Value<'gc> {
-        self.0.this
     }
 
     /// Create a callback from a Rust function.
@@ -104,7 +96,7 @@ impl<'gc> Callback<'gc> {
             }
         }
 
-        Callback::new(mc, RootCallback { root, call }, Value::Undefined)
+        Callback::new(mc, RootCallback { root, call }, None)
     }
 
     #[inline]

@@ -630,7 +630,7 @@ fn load_scripts(
                     .or_default()
                     .insert(
                         event,
-                        ctx.stash(vm::Closure::new(&ctx, proto, vm::Value::Undefined).unwrap()),
+                        ctx.stash(vm::Closure::new(&ctx, proto, None).unwrap()),
                     );
             }
         }
@@ -639,9 +639,7 @@ fn load_scripts(
         Ok(Scripts {
             scripts: script_prototypes
                 .into_iter()
-                .map(|proto| {
-                    ctx.stash(vm::Closure::new(&ctx, proto, vm::Value::Undefined).unwrap())
-                })
+                .map(|proto| ctx.stash(vm::Closure::new(&ctx, proto, None).unwrap()))
                 .collect(),
             object_events,
         })

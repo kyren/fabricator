@@ -112,10 +112,10 @@ pub fn script_execute<'gc>(
     let mut func: vm::Function = exec.stack().from_index(ctx, 0)?;
     // `script_execute` is documented as calling the provided function in the *calling context*,
     // even if it is a bound method.
-    if !func.this().is_undefined() {
+    if func.this().is_some() {
         // NOTE: This allocates, to avoid this we could add a feature to call closures and
         // callbacks while ignoring any bound `self`.
-        func = func.rebind(&ctx, vm::Value::Undefined);
+        func = func.rebind(&ctx, None);
     }
     exec.with_stack_bottom(1).call(ctx, func)?;
     exec.stack().remove(0);
@@ -147,9 +147,9 @@ pub fn script_execute_ext<'gc>(
 
     // `script_execute_ext` is documented as calling the provided function in the *calling
     // context*, even if it is a bound method.
-    if !func.this().is_undefined() {
+    if func.this().is_some() {
         // NOTE: This allocates, see the implementation of `script_execute`.
-        func = func.rebind(&ctx, vm::Value::Undefined);
+        func = func.rebind(&ctx, None);
     }
     exec.call(ctx, func)?;
     Ok(())
