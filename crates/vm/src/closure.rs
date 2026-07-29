@@ -108,6 +108,7 @@ pub struct Prototype<'gc> {
 }
 
 impl<'gc> Prototype<'gc> {
+    #[must_use]
     pub fn new(
         mc: &Mutation<'gc>,
         chunk: Chunk<'gc>,
@@ -462,46 +463,55 @@ impl<'gc> Prototype<'gc> {
         })
     }
 
+    #[must_use]
     #[inline]
     pub fn chunk(&self) -> Chunk<'gc> {
         self.chunk
     }
 
+    #[must_use]
     #[inline]
     pub fn reference(&self) -> &FunctionRef<SharedStr> {
         &self.reference
     }
 
+    #[must_use]
     #[inline]
     pub fn identifier(&self) -> FunctionIdentifier<&str> {
         self.chunk.function_identifier(&self.reference)
     }
 
+    #[must_use]
     #[inline]
     pub fn magic(&self) -> Gc<'gc, MagicSet<'gc>> {
         self.magic
     }
 
+    #[must_use]
     #[inline]
     pub fn bytecode(&self) -> Gc<'gc, ByteCode> {
         self.bytecode
     }
 
+    #[must_use]
     #[inline]
     pub fn constants(&self) -> &[Constant<'gc>] {
         &self.constants
     }
 
+    #[must_use]
     #[inline]
     pub fn prototypes(&self) -> &[Gc<'gc, Prototype<'gc>>] {
         &self.prototypes
     }
 
+    #[must_use]
     #[inline]
     pub fn static_vars(&self) -> &[SharedValue<'gc>] {
         &self.static_vars
     }
 
+    #[must_use]
     #[inline]
     pub fn heap_vars(&self) -> &[HeapVarDescriptor] {
         &self.heap_vars
@@ -523,6 +533,7 @@ impl<'gc> Prototype<'gc> {
         }
     }
 
+    #[must_use]
     #[inline]
     pub fn constructor_super(&self) -> Option<Object<'gc>> {
         self.constructor_super.get()
@@ -530,7 +541,7 @@ impl<'gc> Prototype<'gc> {
 
     /// Returns the required length for a register slice for this prototype.
     ///
-    /// This will return 1 + the maximum register used by any instruction.
+    #[must_use]
     #[inline]
     pub fn used_registers(&self) -> usize {
         self.max_used_register.map(|r| r.index()).unwrap_or(0) + 1
@@ -539,11 +550,13 @@ impl<'gc> Prototype<'gc> {
     /// Returns the required length for a buffer of owned heap values for this prototype.
     ///
     /// This will return 1 + the maximum "slot" used by any `HeapVarDescriptor::Owned` variable.
+    #[must_use]
     #[inline]
     pub fn owned_heap(&self) -> usize {
         self.max_owned_heap.map(|r| r.index()).unwrap_or(0) + 1
     }
 
+    #[must_use]
     pub fn has_upvalues(&self) -> bool {
         for &h in &self.heap_vars {
             if matches!(h, HeapVarDescriptor::UpValue(_)) {
@@ -575,7 +588,7 @@ pub struct Closure<'gc>(Gc<'gc, ClosureInner<'gc>>);
 #[collect(no_drop)]
 pub struct ClosureInner<'gc> {
     proto: Gc<'gc, Prototype<'gc>>,
-    this: Value<'gc>,
+    this: Option<Value<'gc>>,
     heap: Gc<'gc, Box<[HeapVar<'gc>]>>,
 }
 
@@ -605,10 +618,11 @@ impl<'gc> Closure<'gc> {
     /// Create a new top-level closure.
     ///
     /// Given prototype must not have any upvalues.
+    #[must_use]
     pub fn new(
         mc: &Mutation<'gc>,
         proto: Gc<'gc, Prototype<'gc>>,
-        this: Value<'gc>,
+        this: Option<Value<'gc>>,
     ) -> Result<Self, MissingUpValue> {
         let mut heap = Vec::new();
         for &h in &proto.heap_vars {
@@ -636,7 +650,7 @@ impl<'gc> Closure<'gc> {
     pub fn from_parts(
         mc: &Mutation<'gc>,
         proto: Gc<'gc, Prototype<'gc>>,
-        this: Value<'gc>,
+        this: Option<Value<'gc>>,
         heap: Gc<'gc, Box<[HeapVar<'gc>]>>,
     ) -> Result<Self, MissingUpValue> {
         assert_eq!(
@@ -647,16 +661,19 @@ impl<'gc> Closure<'gc> {
         Ok(Self(Gc::new(mc, ClosureInner { proto, this, heap })))
     }
 
+    #[must_use]
     #[inline]
     pub fn from_inner(inner: Gc<'gc, ClosureInner<'gc>>) -> Self {
         Self(inner)
     }
 
+    #[must_use]
     #[inline]
     pub fn into_inner(self) -> Gc<'gc, ClosureInner<'gc>> {
         self.0
     }
 
+    #[must_use]
     #[inline]
     pub fn prototype(self) -> Gc<'gc, Prototype<'gc>> {
         self.0.proto
@@ -665,16 +682,18 @@ impl<'gc> Closure<'gc> {
     /// Returns the currently bound `self` object.
     ///
     /// Will return `Value::Undefined` if there is no bound `self` object set.
+    #[must_use]
     #[inline]
-    pub fn this(self) -> Value<'gc> {
+    pub fn this(self) -> Option<Value<'gc>> {
         self.0.this
     }
 
     /// Return a clone of this closure with the embedded `self` value changed to the provided one.
     ///
     /// If `Value::Undefined` is provided, then the bound `self` object will be removed.
+    #[must_use]
     #[inline]
-    pub fn rebind(self, mc: &Mutation<'gc>, this: Value<'gc>) -> Closure<'gc> {
+    pub fn rebind(self, mc: &Mutation<'gc>, this: Option<Value<'gc>>) -> Closure<'gc> {
         Self(Gc::new(
             mc,
             ClosureInner {
@@ -685,6 +704,7 @@ impl<'gc> Closure<'gc> {
         ))
     }
 
+    #[must_use]
     #[inline]
     pub fn heap(self) -> &'gc [HeapVar<'gc>] {
         &self.0.as_ref().heap
