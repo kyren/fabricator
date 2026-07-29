@@ -21,7 +21,7 @@ fn benchmark_script(c: &mut Criterion, name: &str, code: &str) {
             code,
         )
         .expect("compile error");
-        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, None).unwrap();
 
         let thread = vm::Thread::new(&ctx);
         (ctx.stash(thread), ctx.stash(closure))

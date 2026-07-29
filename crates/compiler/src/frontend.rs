@@ -538,7 +538,7 @@ impl<S> CompileOutput<S> {
                 });
 
             let vm_proto = proto.into_vm(&ctx, chunks[output.chunk_index], new_magic);
-            let closure = vm::Closure::new(&ctx, vm_proto, vm::Value::Undefined).unwrap();
+            let closure = vm::Closure::new(&ctx, vm_proto, None).unwrap();
 
             vm::MagicSet::replace(
                 magic_write,

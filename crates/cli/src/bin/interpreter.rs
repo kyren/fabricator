@@ -46,8 +46,7 @@ fn main() -> Result<ExitCode, Error> {
                     path.to_string_lossy().as_ref(),
                     &code,
                 )?;
-                let closure =
-                    vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
+                let closure = vm::Closure::new(&ctx, chunk_prototype, None).unwrap();
 
                 let thread = vm::Thread::new(&ctx);
                 Ok(match thread.run(ctx, closure) {
@@ -184,8 +183,7 @@ fn main() -> Result<ExitCode, Error> {
                                 imports = ctx.stash(exports);
 
                                 let closure =
-                                    vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined)
-                                        .unwrap();
+                                    vm::Closure::new(&ctx, chunk_prototype, None).unwrap();
 
                                 let thread = ctx.fetch(&thread);
                                 thread.exec(ctx, |mut exec| {
