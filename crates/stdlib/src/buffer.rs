@@ -56,7 +56,7 @@ impl DataType {
 
 pub struct Buffer {
     inner: RefCell<BufferState>,
-    counter: i64,
+    numeric_id: i64,
 }
 
 struct BufferState {
@@ -68,9 +68,9 @@ struct BufferState {
 
 impl Buffer {
     pub fn new(mut data: Vec<u8>, buffer_type: BufferType, alignment: usize) -> Self {
-        static COUNTER: atomic::AtomicI64 = atomic::AtomicI64::new(0);
+        static NUMERIC_ID: atomic::AtomicI64 = atomic::AtomicI64::new(0);
 
-        let counter = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
+        let numeric_id = NUMERIC_ID.fetch_add(1, atomic::Ordering::Relaxed);
 
         assert!(alignment.is_power_of_two());
         let alignment_power_of_2 = alignment.ilog2();
@@ -83,18 +83,16 @@ impl Buffer {
                 data,
                 cursor: 0,
             }),
-            counter,
+            numeric_id,
         }
     }
 
     pub fn into_userdata<'gc>(self, ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct BufferMethods;
 
         impl<'gc> vm::UserDataMethods<'gc> for BufferMethods {
             fn coerce_integer(&self, ud: vm::UserData<'gc>, _ctx: vm::Context<'gc>) -> Option<i64> {
-                Some(ud.downcast_static::<Buffer>().unwrap().counter)
+                Some(ud.downcast_static::<Buffer>().unwrap().numeric_id)
             }
         }
 
@@ -104,7 +102,7 @@ impl Buffer {
 
         impl<'gc> vm::Singleton<'gc> for BufferMethodsSingleton<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, BufferMethods);
+                let methods = ctx.alloc_static(BufferMethods);
                 BufferMethodsSingleton(gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>))
             }
         }

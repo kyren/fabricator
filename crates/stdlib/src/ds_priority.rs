@@ -15,7 +15,7 @@ use crate::util::MagicExt as _;
 #[collect(no_drop)]
 pub struct DsPriority<'gc> {
     inner: RefLock<BinaryHeap<Entry<'gc>>>,
-    counter: i64,
+    numeric_id: i64,
 }
 
 #[derive(Collect)]
@@ -50,23 +50,21 @@ impl<'gc> Ord for Entry<'gc> {
 
 impl<'gc> DsPriority<'gc> {
     pub fn new() -> Self {
-        static COUNTER: atomic::AtomicI64 = atomic::AtomicI64::new(0);
-        let counter = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
+        static NUMERIC_ID: atomic::AtomicI64 = atomic::AtomicI64::new(0);
+        let numeric_id = NUMERIC_ID.fetch_add(1, atomic::Ordering::Relaxed);
 
         Self {
             inner: Default::default(),
-            counter,
+            numeric_id,
         }
     }
 
     pub fn into_userdata(self, ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct DsPriorityMethods;
 
         impl<'gc> vm::UserDataMethods<'gc> for DsPriorityMethods {
             fn coerce_integer(&self, ud: vm::UserData<'gc>, _ctx: vm::Context<'gc>) -> Option<i64> {
-                Some(DsPriority::downcast(ud).unwrap().counter)
+                Some(DsPriority::downcast(ud).unwrap().numeric_id)
             }
         }
 
@@ -76,7 +74,7 @@ impl<'gc> DsPriority<'gc> {
 
         impl<'gc> vm::Singleton<'gc> for DsPriorityMethodsSingleton<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, DsPriorityMethods);
+                let methods = ctx.alloc_static(DsPriorityMethods);
                 DsPriorityMethodsSingleton(
                     gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>),
                 )
@@ -123,7 +121,7 @@ pub fn ds_priority_create<'gc>(
     Ok(DsPriority::new().into_userdata(ctx))
 }
 
-/// Adds a new entry to a ds priority queue with a given priority.
+/// Adds a new entry to the priority queue with a given priority.
 pub fn ds_priority_add<'gc>(
     ctx: vm::Context<'gc>,
     (ds_priority_queue, value, priority): (vm::UserData<'gc>, vm::Value<'gc>, f64),
@@ -131,28 +129,17 @@ pub fn ds_priority_add<'gc>(
     let ds_priority = DsPriority::downcast_write(&ctx, ds_priority_queue)?;
     let mut binary_heap = DsPriority::borrow_mut(ds_priority);
     binary_heap.push(Entry { priority, value });
-
     Ok(())
 }
 
-/// Clears a ds priority.
+/// Clears the priority queue.
 pub fn ds_priority_clear<'gc>(
     ctx: vm::Context<'gc>,
     ds_priority_queue: vm::UserData<'gc>,
 ) -> Result<(), vm::user_data::BadUserDataType> {
     let ds_priority = DsPriority::downcast_write(&ctx, ds_priority_queue)?;
     DsPriority::borrow_mut(ds_priority).clear();
-
     Ok(())
-}
-
-/// Clears the priority list. Since all `ds_` structures are garbage collected in
-/// `fabricator`, simply stop referring to the priority list and it will be GCed.
-pub fn ds_priority_destroy<'gc>(
-    ctx: vm::Context<'gc>,
-    ds_priority_queue: vm::UserData<'gc>,
-) -> Result<(), vm::user_data::BadUserDataType> {
-    ds_priority_clear(ctx, ds_priority_queue)
 }
 
 /// Gets the size of the [`BinaryHeap`].
@@ -164,8 +151,8 @@ pub fn ds_priority_size<'gc>(
     Ok(ds_priority.borrow().len() as i64)
 }
 
-/// Returns the maximum entry in the priority list, removing it from the list
-/// in the process, and returning the entry. We do not return the priority that it had.
+/// Returns the maximum entry in the priority queue, removing it from the queue in the process, and
+/// returning the entry.
 pub fn ds_priority_delete_max<'gc>(
     ctx: vm::Context<'gc>,
     ds_priority_queue: vm::UserData<'gc>,
@@ -176,11 +163,21 @@ pub fn ds_priority_delete_max<'gc>(
     Ok(entry.map(|v| v.value))
 }
 
+/// Only resets the priority queue, as all objects in fabricator are automatically GCed.
+pub fn ds_priority_destroy<'gc>(
+    ctx: vm::Context<'gc>,
+    ds_priority_queue: vm::UserData<'gc>,
+) -> Result<(), vm::user_data::BadUserDataType> {
+    let ds_priority = DsPriority::downcast_write(&ctx, ds_priority_queue)?;
+    *DsPriority::borrow_mut(ds_priority) = BinaryHeap::new();
+    Ok(())
+}
+
 pub fn ds_priority_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "ds_priority_create", ds_priority_create);
     lib.insert_callback(ctx, "ds_priority_add", ds_priority_add);
     lib.insert_callback(ctx, "ds_priority_clear", ds_priority_clear);
-    lib.insert_callback(ctx, "ds_priority_destroy", ds_priority_destroy);
     lib.insert_callback(ctx, "ds_priority_size", ds_priority_size);
     lib.insert_callback(ctx, "ds_priority_delete_max", ds_priority_delete_max);
+    lib.insert_callback(ctx, "ds_priority_destroy", ds_priority_destroy);
 }

@@ -22,10 +22,10 @@ pub fn font_api<'gc>(
     let mut magic = vm::MagicSet::new();
 
     for font in config.fonts.values() {
-        magic.add_constant(&ctx, ctx.intern(&font.name), ctx.fetch(&font.userdata))?;
+        magic.add_constant(ctx, ctx.intern(&font.name), ctx.fetch(&font.userdata))?;
     }
 
-    let font_get_name = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let font_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let font: vm::UserData = exec.stack().consume(ctx)?;
         let font_id = FontUserData::downcast(font)?.id;
         State::ctx_with_mut(ctx, |state| {
@@ -35,10 +35,10 @@ pub fn font_api<'gc>(
         })?
     });
     magic
-        .add_constant(&ctx, ctx.intern("font_get_name"), font_get_name)
+        .add_constant(ctx, ctx.intern("font_get_name"), font_get_name)
         .unwrap();
 
-    let font_add_sprite_ext = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let font_add_sprite_ext = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         State::ctx_with_mut(ctx, |state| {
             let id = state.config.fonts.insert_with_id(|id| {
                 let name = format!("dynamic_font_{}", id.index());
@@ -54,7 +54,7 @@ pub fn font_api<'gc>(
         })?
     });
     magic
-        .add_constant(&ctx, ctx.intern("font_add_sprite_ext"), font_add_sprite_ext)
+        .add_constant(ctx, ctx.intern("font_add_sprite_ext"), font_add_sprite_ext)
         .unwrap();
 
     Ok(magic)

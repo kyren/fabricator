@@ -209,8 +209,6 @@ impl<'gc> RuntimeErrorUserData<'gc> {
     }
 
     fn into_userdata(self, ctx: Context<'gc>) -> UserData<'gc> {
-        #[derive(Copy, Clone, Collect)]
-        #[collect(require_static)]
         struct Methods;
 
         impl<'gc> UserDataMethods<'gc> for Methods {
@@ -241,7 +239,7 @@ impl<'gc> RuntimeErrorUserData<'gc> {
 
         impl<'gc> Singleton<'gc> for ErrorMethodsSingleton<'gc> {
             fn create(ctx: Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, Methods);
+                let methods = ctx.alloc_static(Methods);
                 ErrorMethodsSingleton(gc_arena::unsize!(methods => dyn UserDataMethods<'gc>))
             }
         }

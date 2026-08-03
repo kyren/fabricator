@@ -21,8 +21,6 @@ impl<'gc> LayerIdUserData<'gc> {
         layer_id: LayerId,
         name: Option<vm::String<'gc>>,
     ) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct Methods;
 
         impl<'gc> vm::UserDataMethods<'gc> for Methods {
@@ -52,7 +50,7 @@ impl<'gc> LayerIdUserData<'gc> {
 
         impl<'gc> vm::Singleton<'gc> for MethodsSingleton<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, Methods);
+                let methods = ctx.alloc_static(Methods);
                 MethodsSingleton(gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>))
             }
         }
@@ -98,7 +96,7 @@ pub fn find_layer<'gc>(
 pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     let mut magic = vm::MagicSet::new();
 
-    let layer_create = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_create = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (depth, name): (i32, Option<vm::String>) = exec.stack().consume(ctx)?;
 
         let layer_ud = State::ctx_with_mut(ctx, |state| {
@@ -134,10 +132,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_create"), layer_create)
+        .add_constant(ctx, ctx.intern("layer_create"), layer_create)
         .unwrap();
 
-    let layer_exists = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_exists = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let layer_id_or_name: vm::Value = exec.stack().consume(ctx)?;
         let exists = State::ctx_with(ctx, |state| -> Result<bool, vm::RuntimeError> {
             match layer_id_or_name {
@@ -155,10 +153,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_exists"), layer_exists)
+        .add_constant(ctx, ctx.intern("layer_exists"), layer_exists)
         .unwrap();
 
-    let layer_get_id = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_get_id = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let name: vm::String = exec.stack().consume(ctx)?;
 
         let layer_ud = State::ctx_with_mut(ctx, |state| {
@@ -175,10 +173,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_get_id"), layer_get_id)
+        .add_constant(ctx, ctx.intern("layer_get_id"), layer_get_id)
         .unwrap();
 
-    let layer_get_name = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let layer_id_or_name: vm::Value = exec.stack().consume(ctx)?;
         let layer_id = State::ctx_with(ctx, |state| find_layer(state, layer_id_or_name))??;
         exec.stack().replace(
@@ -192,10 +190,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_get_name"), layer_get_name)
+        .add_constant(ctx, ctx.intern("layer_get_name"), layer_get_name)
         .unwrap();
 
-    let layer_get_depth = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_get_depth = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let layer_id_or_name: vm::Value = exec.stack().consume(ctx)?;
         let layer_id = State::ctx_with(ctx, |state| find_layer(state, layer_id_or_name))??;
         exec.stack().replace(
@@ -205,10 +203,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_get_depth"), layer_get_depth)
+        .add_constant(ctx, ctx.intern("layer_get_depth"), layer_get_depth)
         .unwrap();
 
-    let layer_depth = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_depth = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (layer_id_or_name, depth): (vm::Value, i32) = exec.stack().consume(ctx)?;
         State::ctx_with_mut(ctx, |state| {
             let layer_id = find_layer(state, layer_id_or_name)?;
@@ -217,10 +215,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_depth"), layer_depth)
+        .add_constant(ctx, ctx.intern("layer_depth"), layer_depth)
         .unwrap();
 
-    let layer_set_visible = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_set_visible = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (layer_id_or_name, visible): (vm::Value, bool) = exec.stack().consume(ctx)?;
         State::ctx_with_mut(ctx, |state| {
             let layer_id = find_layer(state, layer_id_or_name)?;
@@ -229,10 +227,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_set_visible"), layer_set_visible)
+        .add_constant(ctx, ctx.intern("layer_set_visible"), layer_set_visible)
         .unwrap();
 
-    let layer_get_all = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_get_all = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         State::ctx_with(ctx, |state| {
             exec.stack().replace(
                 ctx,
@@ -245,10 +243,10 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("layer_get_all"), layer_get_all)
+        .add_constant(ctx, ctx.intern("layer_get_all"), layer_get_all)
         .unwrap();
 
-    let layer_destroy_instances = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let layer_destroy_instances = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let layer_id_or_name: vm::Value = exec.stack().consume(ctx)?;
         let to_destroy = State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
             let layer_id = find_layer(state, layer_id_or_name)?;
@@ -299,7 +297,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     });
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("layer_destroy_instances"),
             layer_destroy_instances,
         )

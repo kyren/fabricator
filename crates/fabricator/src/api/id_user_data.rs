@@ -17,8 +17,6 @@ where
     I: typed_id_map::Id + 'static,
 {
     pub fn new<'gc>(ctx: vm::Context<'gc>, id: I) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct Methods<I>(PhantomData<I>);
 
         impl<'gc, I> vm::UserDataMethods<'gc> for Methods<I>
@@ -39,7 +37,7 @@ where
             I: typed_id_map::Id + 'static,
         {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, Methods::<I>(PhantomData));
+                let methods = ctx.alloc_static(Methods::<I>(PhantomData));
                 MethodsSingleton(
                     gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>),
                     PhantomData,
@@ -55,9 +53,7 @@ where
         userdata
     }
 
-    pub fn downcast<'gc>(
-        userdata: vm::UserData<'gc>,
-    ) -> Result<&'gc Self, vm::BadUserDataType> {
+    pub fn downcast<'gc>(userdata: vm::UserData<'gc>) -> Result<&'gc Self, vm::BadUserDataType> {
         userdata.downcast_static::<IdUserData<I>>()
     }
 }
@@ -79,8 +75,6 @@ where
     I: typed_id_map::Id + 'static,
 {
     pub fn new(ctx: vm::Context<'gc>, id: I, name: vm::String<'gc>) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct Methods<I>(PhantomData<I>);
 
         impl<'gc, I> vm::UserDataMethods<'gc> for Methods<I>
@@ -118,7 +112,7 @@ where
             I: typed_id_map::Id + 'static,
         {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, Methods::<I>(PhantomData));
+                let methods = ctx.alloc_static(Methods::<I>(PhantomData));
                 MethodsSingleton(
                     gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>),
                     PhantomData,
@@ -137,9 +131,7 @@ where
         userdata
     }
 
-    pub fn downcast(
-        userdata: vm::UserData<'gc>,
-    ) -> Result<&'gc Self, vm::BadUserDataType> {
+    pub fn downcast(userdata: vm::UserData<'gc>) -> Result<&'gc Self, vm::BadUserDataType> {
         userdata.downcast::<Rootable![NamedIdUserData<'_, I>]>()
     }
 }

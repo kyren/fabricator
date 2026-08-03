@@ -165,7 +165,7 @@ impl<'gc> ObjectUserData<'gc> {
 
         impl<'gc> vm::Singleton<'gc> for MethodsSingleton<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let instance_iter = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+                let instance_iter = vm::Callback::from_fn(ctx, |ctx, mut exec| {
                     let (array, mut idx): (vm::Array, usize) = exec.stack().consume(ctx)?;
                     let next_instance =
                         State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
@@ -239,7 +239,7 @@ pub fn no_one<'gc>(ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
             }
 
             let ud = vm::UserData::new_static(&ctx, NoOne);
-            let null_iter = vm::Callback::from_fn(&ctx, |_, _| Ok(()));
+            let null_iter = vm::Callback::from_fn(ctx, |_, _| Ok(()));
             let methods =
                 gc_arena::unsize!(Gc::new(&ctx, Methods { null_iter }) => dyn vm::UserDataMethods);
             ud.set_methods(&ctx, Some(methods));
@@ -295,7 +295,7 @@ pub fn all<'gc>(ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
                 }
             }
 
-            let instance_iter = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+            let instance_iter = vm::Callback::from_fn(ctx, |ctx, mut exec| {
                 let (array, mut idx): (vm::Array, usize) = exec.stack().consume(ctx)?;
                 let next_instance =
                     State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
@@ -341,18 +341,18 @@ pub fn object_api<'gc>(
     let mut magic = vm::MagicSet::new();
 
     magic
-        .add_constant(&ctx, ctx.intern("noone"), no_one(ctx))
+        .add_constant(ctx, ctx.intern("noone"), no_one(ctx))
         .unwrap();
 
     magic
-        .add_constant(&ctx, ctx.intern("all"), all(ctx))
+        .add_constant(ctx, ctx.intern("all"), all(ctx))
         .unwrap();
 
     for object in config.objects.values() {
-        magic.add_constant(&ctx, ctx.intern(&object.name), ctx.fetch(&object.userdata))?;
+        magic.add_constant(ctx, ctx.intern(&object.name), ctx.fetch(&object.userdata))?;
     }
 
-    let object_get_name = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let object_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let object: vm::UserData = exec.stack().consume(ctx)?;
         let object_id = ObjectUserData::downcast(object)?.id;
         State::ctx_with_mut(ctx, |state| {
@@ -362,10 +362,10 @@ pub fn object_api<'gc>(
         })?
     });
     magic
-        .add_constant(&ctx, ctx.intern("object_get_name"), object_get_name)
+        .add_constant(ctx, ctx.intern("object_get_name"), object_get_name)
         .unwrap();
 
-    let instance_create_depth = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let instance_create_depth = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (x, y, depth, object, set_properties): (
             f64,
             f64,
@@ -456,12 +456,12 @@ pub fn object_api<'gc>(
         Ok(())
     });
     magic.add_constant(
-        &ctx,
+        ctx,
         ctx.intern("instance_create_depth"),
         instance_create_depth,
     )?;
 
-    let instance_create_layer = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let instance_create_layer = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (x, y, layer_id_or_name, object, set_properties): (
             f64,
             f64,
@@ -542,12 +542,12 @@ pub fn object_api<'gc>(
         Ok(())
     });
     magic.add_constant(
-        &ctx,
+        ctx,
         ctx.intern("instance_create_layer"),
         instance_create_layer,
     )?;
 
-    let instance_exists = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let instance_exists = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let object_or_instance: vm::UserData = exec.stack().consume(ctx)?;
         let found = if let Ok(object) = ObjectUserData::downcast(object_or_instance) {
             State::ctx_with(ctx, |state| {
@@ -573,10 +573,10 @@ pub fn object_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("instance_exists"), instance_exists)
+        .add_constant(ctx, ctx.intern("instance_exists"), instance_exists)
         .unwrap();
 
-    let instance_deactivate_object = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let instance_deactivate_object = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let object_or_instance: vm::UserData = exec.stack().consume(ctx)?;
         if let Ok(object) = ObjectUserData::downcast(object_or_instance) {
             State::ctx_with_mut(ctx, |state| {
@@ -601,13 +601,13 @@ pub fn object_api<'gc>(
     });
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("instance_deactivate_object"),
             instance_deactivate_object,
         )
         .unwrap();
 
-    let instance_activate_region = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let instance_activate_region = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (left, top, width, height, inside): (f64, f64, f64, f64, bool) =
             exec.stack().consume(ctx)?;
         if !inside {
@@ -630,13 +630,13 @@ pub fn object_api<'gc>(
     });
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("instance_activate_region"),
             instance_activate_region,
         )
         .unwrap();
 
-    let instance_destroy = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let instance_destroy = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let mut to_destroy = None;
         State::ctx_with(ctx, |state| {
             for i in 0..exec.this_depth() {
@@ -704,7 +704,7 @@ pub fn object_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("instance_destroy"), instance_destroy)
+        .add_constant(ctx, ctx.intern("instance_destroy"), instance_destroy)
         .unwrap();
 
     Ok(magic)

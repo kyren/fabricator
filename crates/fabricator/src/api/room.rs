@@ -2,8 +2,8 @@ use fabricator_vm as vm;
 
 use crate::{
     api::{
-        magic::{DuplicateMagicName, MagicExt as _, create_magic_ro},
         id_user_data::NamedIdUserData,
+        magic::{DuplicateMagicName, MagicExt as _, create_magic_ro},
     },
     state::{Configuration, RoomId, State},
 };
@@ -19,10 +19,10 @@ pub fn room_api<'gc>(
     for room in config.rooms.values() {
         let room_id_ud = ctx.fetch(&room.userdata);
         let room_name = RoomUserData::downcast(room_id_ud).unwrap().name;
-        magic.add_constant(&ctx, room_name, room_id_ud)?;
+        magic.add_constant(ctx, room_name, room_id_ud)?;
     }
 
-    let room_magic = create_magic_ro(&ctx, |ctx| {
+    let room_magic = create_magic_ro(ctx, |ctx| {
         Ok(State::ctx_with(ctx, |state| {
             ctx.fetch(&state.config.rooms[state.current_room.unwrap()].userdata)
                 .into()
@@ -30,7 +30,7 @@ pub fn room_api<'gc>(
     });
     magic.add(ctx.intern("room"), room_magic)?;
 
-    let room_goto = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let room_goto = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let room: vm::Value = exec.stack().consume(ctx)?;
         let room_id = match room {
             vm::Value::UserData(userdata) => RoomUserData::downcast(userdata)?.id,
@@ -53,10 +53,10 @@ pub fn room_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("room_goto"), room_goto)
+        .add_constant(ctx, ctx.intern("room_goto"), room_goto)
         .unwrap();
 
-    let room_get_name = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let room_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let room: vm::UserData = exec.stack().consume(ctx)?;
         let room_id = RoomUserData::downcast(room)?.id;
         State::ctx_with_mut(ctx, |state| {
@@ -66,17 +66,17 @@ pub fn room_api<'gc>(
         })?
     });
     magic
-        .add_constant(&ctx, ctx.intern("room_get_name"), room_get_name)
+        .add_constant(ctx, ctx.intern("room_get_name"), room_get_name)
         .unwrap();
 
-    let room_width = create_magic_ro(&ctx, |ctx| {
+    let room_width = create_magic_ro(ctx, |ctx| {
         Ok(State::ctx_with(ctx, |state| {
             vm::Value::Integer(state.config.rooms[state.current_room.unwrap()].size[0] as i64)
         })?)
     });
     magic.add(ctx.intern("room_width"), room_width)?;
 
-    let room_height = create_magic_ro(&ctx, |ctx| {
+    let room_height = create_magic_ro(ctx, |ctx| {
         Ok(State::ctx_with(ctx, |state| {
             vm::Value::Integer(state.config.rooms[state.current_room.unwrap()].size[1] as i64)
         })?)
@@ -84,13 +84,13 @@ pub fn room_api<'gc>(
     magic.add(ctx.intern("room_height"), room_height)?;
 
     magic.add_constant(
-        &ctx,
+        ctx,
         ctx.intern("room_first"),
         ctx.fetch(&config.rooms[config.first_room].userdata),
     )?;
 
     magic.add_constant(
-        &ctx,
+        ctx,
         ctx.intern("room_last"),
         ctx.fetch(&config.rooms[config.last_room].userdata),
     )?;

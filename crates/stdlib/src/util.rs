@@ -167,7 +167,7 @@ impl<'gc> MagicExt<'gc> for vm::MagicSet<'gc> {
         self.insert_constant(
             ctx,
             name,
-            vm::Callback::from_fn(&ctx, move |ctx, mut exec| {
+            vm::Callback::from_fn(ctx, move |ctx, mut exec| {
                 let args: A = exec.stack().consume(ctx)?;
                 let ret = f(ctx, args)?;
                 exec.stack().replace(ctx, ret);
@@ -184,7 +184,7 @@ impl<'gc> MagicExt<'gc> for vm::MagicSet<'gc> {
         self.insert_constant(
             ctx,
             name,
-            vm::Callback::from_fn(&ctx, move |ctx, exec| Ok(f(ctx, exec)?)),
+            vm::Callback::from_fn(ctx, move |ctx, exec| Ok(f(ctx, exec)?)),
         )
     }
 }

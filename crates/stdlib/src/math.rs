@@ -152,7 +152,7 @@ impl<'a> RngLock<'a> {
 
 /// Pick a random i64 as a new pRNG seed, initialize the pRNG with it and return it.
 pub fn randomize<'gc>(ctx: vm::Context<'gc>, (): ()) -> Result<i64, RngLockError> {
-    let seed: i64 = rand::rng().random();
+    let seed = rand::rng().random();
     Rng::singleton(ctx).lock()?.set_seed(seed);
     Ok(seed)
 }
@@ -177,7 +177,7 @@ pub fn random_set_seed<'gc>(ctx: vm::Context<'gc>, seed: i64) -> Result<(), RngL
 pub fn random_get_seed<'gc>(ctx: vm::Context<'gc>, _no_args: ()) -> Result<i64, RngLockError> {
     let mut rng = Rng::singleton(ctx).lock()?;
     let next_seed = rng.random();
-    *rng.0 = SmallRng::seed_from_u64(next_seed);
+    rng.set_seed(next_seed);
     Ok(next_seed as i64)
 }
 
