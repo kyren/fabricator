@@ -20,13 +20,21 @@ pub struct CallbackInner<'gc> {
 pub struct Callback<'gc>(Gc<'gc, CallbackInner<'gc>>);
 
 impl<'gc> Callback<'gc> {
-    pub fn new<C: CallbackFn<'gc> + Collect<'gc> + 'gc>(
+    pub fn new(
         mc: &Mutation<'gc>,
+        function: Gc<'gc, dyn CallbackFn<'gc>>,
+        this: Option<Value<'gc>>,
+    ) -> Self {
+        Self(Gc::new(mc, CallbackInner { function, this }))
+    }
+
+    pub fn with_callback<C: CallbackFn<'gc> + Collect<'gc> + 'gc>(
+        ctx: Context<'gc>,
         callback: C,
         this: Option<Value<'gc>>,
     ) -> Self {
-        let function = gc_arena::unsize!(Gc::new(mc, callback) => dyn CallbackFn);
-        Self(Gc::new(mc, CallbackInner { function, this }))
+        let function = gc_arena::unsize!(ctx.alloc(callback) => dyn CallbackFn);
+        Self(Gc::new(&ctx, CallbackInner { function, this }))
     }
 
     /// Returns the currently bound `self` object, or `Value::Undefined` if one is not set.
@@ -61,15 +69,15 @@ impl<'gc> Callback<'gc> {
     ///
     /// The function must be `'static` because Rust closures cannot implement `Collect`. If you need
     /// to associate GC data with this function, use [`Callback::from_fn_with_root`].
-    pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
+    pub fn from_fn<F>(ctx: Context<'gc>, call: F) -> Callback<'gc>
     where
         F: 'static + Fn(Context<'gc>, Execution<'gc, '_>) -> Result<(), RuntimeError>,
     {
-        Self::from_fn_with_root(mc, (), move |_, ctx, exec| call(ctx, exec))
+        Self::from_fn_with_root(ctx, (), move |_, ctx, exec| call(ctx, exec))
     }
 
     /// Create a callback from a Rust function together with a GC object.
-    pub fn from_fn_with_root<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> Callback<'gc>
+    pub fn from_fn_with_root<R, F>(ctx: Context<'gc>, root: R, call: F) -> Callback<'gc>
     where
         R: 'gc + Collect<'gc>,
         F: 'static + Fn(&R, Context<'gc>, Execution<'gc, '_>) -> Result<(), RuntimeError>,
@@ -96,7 +104,7 @@ impl<'gc> Callback<'gc> {
             }
         }
 
-        Callback::new(mc, RootCallback { root, call }, None)
+        Callback::with_callback(ctx, RootCallback { root, call }, None)
     }
 
     #[inline]

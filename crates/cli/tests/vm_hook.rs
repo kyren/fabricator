@@ -16,7 +16,7 @@ fn test_vm_call_return_hooks() {
         magic.insert_constant(
             ctx,
             "test_callback",
-            vm::Callback::from_fn(&ctx, |_ctx, mut exec| {
+            vm::Callback::from_fn(ctx, |_ctx, mut exec| {
                 exec.stack().clear();
                 Ok(())
             }),
@@ -192,7 +192,7 @@ fn test_vm_call_return_hook_count_with_error() {
         magic.insert_constant(
             ctx,
             "test_callback",
-            vm::Callback::from_fn(&ctx, |_ctx, mut exec| {
+            vm::Callback::from_fn(ctx, |_ctx, mut exec| {
                 exec.stack().clear();
                 Ok(())
             }),

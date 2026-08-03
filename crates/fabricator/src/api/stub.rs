@@ -12,7 +12,7 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         value: impl Into<vm::Value<'gc>>,
     ) {
         magic
-            .add_constant(&ctx, ctx.intern(name), value.into())
+            .add_constant(ctx, ctx.intern(name), value.into())
             .unwrap();
     }
 
@@ -23,14 +23,14 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         returns: [vm::Value<'gc>; RET_COUNT],
     ) {
         let stub_callback =
-            vm::Callback::from_fn_with_root(&ctx, returns, move |returns, _ctx, mut exec| {
+            vm::Callback::from_fn_with_root(ctx, returns, move |returns, _ctx, mut exec| {
                 log::debug!("call of stubbed out callback {name}");
                 exec.stack().clear();
                 exec.stack().extend(returns);
                 Ok(())
             });
         magic
-            .add_constant(&ctx, ctx.intern(name), stub_callback)
+            .add_constant(ctx, ctx.intern(name), stub_callback)
             .unwrap();
     }
 
@@ -212,7 +212,7 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
 
     create_stub_callback(ctx, &mut magic, "draw_set_font", [unit_userdata]);
 
-    let font_get_info = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let font_get_info = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let data = vm::Object::new(&ctx);
         let glyphs = vm::Object::new(&ctx);
         data.set(&ctx, ctx.intern("glyphs"), glyphs);
@@ -220,29 +220,29 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("font_get_info"), font_get_info)
+        .add_constant(ctx, ctx.intern("font_get_info"), font_get_info)
         .unwrap();
 
-    let string_width = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let string_width = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let string: vm::String = exec.stack().consume(ctx)?;
         let fake_width = string.chars().count() as f64 * 12.0;
         exec.stack().replace(ctx, fake_width);
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("string_width"), string_width)
+        .add_constant(ctx, ctx.intern("string_width"), string_width)
         .unwrap();
 
-    let string_width_ext = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let string_width_ext = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (_string, _line_height, width): (vm::String, f64, f64) = exec.stack().consume(ctx)?;
         exec.stack().replace(ctx, width);
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("string_width_ext"), string_width_ext)
+        .add_constant(ctx, ctx.intern("string_width_ext"), string_width_ext)
         .unwrap();
 
-    let string_height_ext = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let string_height_ext = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (string, line_height, width): (vm::String, f64, f64) = exec.stack().consume(ctx)?;
         let fake_width = string.chars().count() as f64 * 12.0;
         let fake_height = (fake_width / width).ceil() * line_height;
@@ -250,7 +250,7 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("string_height_ext"), string_height_ext)
+        .add_constant(ctx, ctx.intern("string_height_ext"), string_height_ext)
         .unwrap();
 
     create_stub_callback(

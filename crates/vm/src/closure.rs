@@ -1,6 +1,6 @@
 use std::{fmt, hash};
 
-use gc_arena::{Collect, Gc, Lock, Mutation};
+use gc_arena::{Collect, Gc, GcSlice, Lock, Mutation};
 use thiserror::Error;
 
 use crate::{
@@ -592,7 +592,7 @@ pub struct Closure<'gc>(Gc<'gc, ClosureInner<'gc>>);
 pub struct ClosureInner<'gc> {
     proto: Gc<'gc, Prototype<'gc>>,
     this: Option<Value<'gc>>,
-    heap: Gc<'gc, Box<[HeapVar<'gc>]>>,
+    heap: GcSlice<'gc, HeapVar<'gc>>,
 }
 
 impl<'gc> fmt::Debug for Closure<'gc> {
@@ -641,7 +641,7 @@ impl<'gc> Closure<'gc> {
                 }
             }
         }
-        Self::from_parts(mc, proto, this, Gc::new(mc, heap.into_boxed_slice()))
+        Self::from_parts(mc, proto, this, Gc::new_slice(mc, &heap))
     }
 
     /// Create a new closure using the given `upvalues` array to lookup any required upvalues.
@@ -654,7 +654,7 @@ impl<'gc> Closure<'gc> {
         mc: &Mutation<'gc>,
         proto: Gc<'gc, Prototype<'gc>>,
         this: Option<Value<'gc>>,
-        heap: Gc<'gc, Box<[HeapVar<'gc>]>>,
+        heap: GcSlice<'gc, HeapVar<'gc>>,
     ) -> Result<Self, MissingUpValue> {
         assert_eq!(
             heap.len(),

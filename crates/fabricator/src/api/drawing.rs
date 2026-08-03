@@ -25,33 +25,33 @@ pub fn drawing_api<'gc>(
     let mut magic = vm::MagicSet::new();
 
     for sprite in config.sprites.values() {
-        magic.add_constant(&ctx, ctx.intern(&sprite.name), ctx.fetch(&sprite.userdata))?;
+        magic.add_constant(ctx, ctx.intern(&sprite.name), ctx.fetch(&sprite.userdata))?;
     }
 
     for shader in config.shaders.values() {
-        magic.add_constant(&ctx, ctx.intern(&shader.name), ctx.fetch(&shader.userdata))?;
+        magic.add_constant(ctx, ctx.intern(&shader.name), ctx.fetch(&shader.userdata))?;
     }
 
     for tile_set in config.tile_sets.values() {
         magic.add_constant(
-            &ctx,
+            ctx,
             ctx.intern(&tile_set.name),
             ctx.fetch(&tile_set.userdata),
         )?;
     }
 
-    magic.add_constant(&ctx, ctx.intern("c_white"), 0xffffff)?;
-    magic.add_constant(&ctx, ctx.intern("c_black"), 0x0)?;
+    magic.add_constant(ctx, ctx.intern("c_white"), 0xffffff)?;
+    magic.add_constant(ctx, ctx.intern("c_black"), 0x0)?;
 
-    let make_color_rgb = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let make_color_rgb = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (r, g, b): (u8, u8, u8) = exec.stack().consume(ctx)?;
         let color = (r as u32) | (g as u32) << 8 | (b as u32) << 16;
         exec.stack().replace(ctx, color);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("make_color_rgb"), make_color_rgb)?;
+    magic.add_constant(ctx, ctx.intern("make_color_rgb"), make_color_rgb)?;
 
-    let draw_sprite = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let draw_sprite = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (sprite, sub_img, x, y): (vm::UserData, i64, f64, f64) = exec.stack().consume(ctx)?;
         let sprite = SpriteUserData::downcast(sprite)?;
 
@@ -72,9 +72,9 @@ pub fn drawing_api<'gc>(
 
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("draw_sprite"), draw_sprite)?;
+    magic.add_constant(ctx, ctx.intern("draw_sprite"), draw_sprite)?;
 
-    let sprite_get_info = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_info = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
 
@@ -157,9 +157,9 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, info);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_info"), sprite_get_info)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_info"), sprite_get_info)?;
 
-    let sprite_get_name = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
         let name = State::ctx_with(ctx, |state| {
@@ -168,9 +168,9 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, name);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_name"), sprite_get_name)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_name"), sprite_get_name)?;
 
-    let sprite_get_number = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_number = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
         let frame_count =
@@ -178,45 +178,45 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, frame_count as isize);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_number"), sprite_get_number)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_number"), sprite_get_number)?;
 
-    let sprite_get_width = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_width = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
         let width = State::ctx_with(ctx, |state| state.config.sprites[sprite_id].size[0])?;
         exec.stack().replace(ctx, width);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_width"), sprite_get_width)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_width"), sprite_get_width)?;
 
-    let sprite_get_height = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_height = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
         let height = State::ctx_with(ctx, |state| state.config.sprites[sprite_id].size[0])?;
         exec.stack().replace(ctx, height);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_height"), sprite_get_height)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_height"), sprite_get_height)?;
 
-    let sprite_get_xoffset = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_xoffset = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
         let xoffset = State::ctx_with(ctx, |state| state.config.sprites[sprite_id].origin[0])?;
         exec.stack().replace(ctx, xoffset);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_xoffset"), sprite_get_xoffset)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_xoffset"), sprite_get_xoffset)?;
 
-    let sprite_get_yoffset = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_yoffset = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
         let yoffset = State::ctx_with(ctx, |state| state.config.sprites[sprite_id].origin[1])?;
         exec.stack().replace(ctx, yoffset);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_yoffset"), sprite_get_yoffset)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_yoffset"), sprite_get_yoffset)?;
 
-    let sprite_get_texture = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let sprite_get_texture = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (sprite, index): (vm::UserData, usize) = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
         let texture = State::ctx_with(ctx, |state| {
@@ -227,9 +227,9 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, texture);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("sprite_get_texture"), sprite_get_texture)?;
+    magic.add_constant(ctx, ctx.intern("sprite_get_texture"), sprite_get_texture)?;
 
-    let texture_get_texel_width = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let texture_get_texel_width = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let texture_page: vm::UserData = exec.stack().consume(ctx)?;
         let texture_page_id = TexturePageUserData::downcast(texture_page)?.id;
         State::ctx_with(ctx, |state| {
@@ -239,12 +239,12 @@ pub fn drawing_api<'gc>(
         Ok(())
     });
     magic.add_constant(
-        &ctx,
+        ctx,
         ctx.intern("texture_get_texel_width"),
         texture_get_texel_width,
     )?;
 
-    let texture_get_texel_height = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let texture_get_texel_height = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let texture_page: vm::UserData = exec.stack().consume(ctx)?;
         let texture_page_id = TexturePageUserData::downcast(texture_page)?.id;
         State::ctx_with(ctx, |state| {
@@ -254,7 +254,7 @@ pub fn drawing_api<'gc>(
         Ok(())
     });
     magic.add_constant(
-        &ctx,
+        ctx,
         ctx.intern("texture_get_texel_height"),
         texture_get_texel_height,
     )?;

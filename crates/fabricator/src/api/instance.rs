@@ -42,8 +42,6 @@ struct InstanceMethodsSingleton<'gc>(Gc<'gc, dyn vm::UserDataMethods<'gc>>);
 
 impl<'gc> vm::Singleton<'gc> for InstanceMethodsSingleton<'gc> {
     fn create(ctx: vm::Context<'gc>) -> Self {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct Methods;
 
         impl Methods {
@@ -164,7 +162,7 @@ impl<'gc> vm::Singleton<'gc> for InstanceMethodsSingleton<'gc> {
             }
         }
 
-        let methods = Gc::new(&ctx, Methods);
+        let methods = ctx.alloc_static(Methods);
         Self(gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>))
     }
 }
@@ -203,7 +201,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     ] {
         magic
             .add_constant(
-                &ctx,
+                ctx,
                 ctx.intern(name),
                 vm::UserData::new_static(&ctx, event_type),
             )
@@ -217,7 +215,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     ] {
         magic
             .add_constant(
-                &ctx,
+                ctx,
                 ctx.intern(name),
                 vm::UserData::new_static(&ctx, step_event),
             )
@@ -230,14 +228,14 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     ] {
         magic
             .add_constant(
-                &ctx,
+                ctx,
                 ctx.intern(name),
                 vm::UserData::new_static(&ctx, other_event),
             )
             .unwrap();
     }
 
-    let event_perform = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let event_perform = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (event_type, sub_event): (vm::UserData, Option<vm::UserData>) =
             exec.stack().consume(ctx)?;
 
@@ -295,10 +293,10 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("event_perform"), event_perform)
+        .add_constant(ctx, ctx.intern("event_perform"), event_perform)
         .unwrap();
 
-    let event_inherited = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let event_inherited = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         exec.stack().clear();
 
         let (instance_id, object_id, current_event) = EventState::ctx_with(ctx, |state| {
@@ -334,10 +332,10 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         }
     });
     magic
-        .add_constant(&ctx, ctx.intern("event_inherited"), event_inherited)
+        .add_constant(ctx, ctx.intern("event_inherited"), event_inherited)
         .unwrap();
 
-    let instance_deactivate_layer = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let instance_deactivate_layer = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let layer_id_or_name: vm::Value = exec.stack().consume(ctx)?;
         let to_deactivate = State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
             let layer_id = find_layer(state, layer_id_or_name)?;
@@ -361,7 +359,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     });
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("instance_deactivate_layer"),
             instance_deactivate_layer,
         )

@@ -1,9 +1,10 @@
 use std::ops;
 
 use gc_arena::{
-    Arena, Collect, Mutation, Rootable,
+    Arena, Collect, Gc, Mutation, Rootable,
     arena::{CollectionPhase as GcCollectionPhase, Root},
     metrics::Metrics as GcMetrics,
+    zst_cache::ZstCache,
 };
 
 use crate::{
@@ -12,6 +13,8 @@ use crate::{
     stash::{Fetchable, Stashable},
     string::{InternedStrings, String},
 };
+
+pub const MAX_ZST_CACHE_ALIGN: usize = 16;
 
 #[derive(Copy, Clone)]
 pub struct Context<'gc> {
@@ -79,6 +82,26 @@ impl<'gc> Context<'gc> {
     pub fn intern(self, s: &str) -> String<'gc> {
         self.state.interned_strings.intern(&self, s, || s.into())
     }
+
+    pub fn zst_cache(self) -> ZstCache<'gc, MAX_ZST_CACHE_ALIGN> {
+        self.state.zst_cache
+    }
+
+    pub fn alloc_zst<T: 'gc>(self) -> Option<Gc<'gc, T>> {
+        self.state.zst_cache.alloc_zst()
+    }
+
+    /// This method is the same as [`Gc::new`], except that it will automatically use a shared
+    /// allocation for ZST types.
+    pub fn alloc<T: Collect<'gc>>(self, t: T) -> Gc<'gc, T> {
+        self.state.zst_cache.alloc(self.mutation, t)
+    }
+
+    /// This method is the same as [`Gc::new_static`], except that it will automatically use a
+    /// shared allocation for ZST types.
+    pub fn alloc_static<T: 'static>(self, t: T) -> Gc<'gc, T> {
+        self.state.zst_cache.alloc_static(self.mutation, t)
+    }
 }
 
 pub struct Interpreter {
@@ -131,6 +154,7 @@ struct State<'gc> {
     globals: Object<'gc>,
     registry: Registry<'gc>,
     interned_strings: InternedStrings<'gc>,
+    zst_cache: ZstCache<'gc, MAX_ZST_CACHE_ALIGN>,
 }
 
 impl<'gc> State<'gc> {
@@ -139,6 +163,7 @@ impl<'gc> State<'gc> {
             globals: Object::new(mc),
             registry: Registry::new(mc),
             interned_strings: InternedStrings::new(mc),
+            zst_cache: ZstCache::new(mc),
         }
     }
 

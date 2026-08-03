@@ -1,4 +1,4 @@
-use gc_arena::{Collect, Mutation, Rootable};
+use gc_arena::{Collect, Rootable};
 
 use crate::{
     callback::Callback,
@@ -124,9 +124,9 @@ impl<'gc> BuiltIns<'gc> {
     pub const GET_MULTI_INDEX: &'static str = "__get_multi_index";
     pub const SET_MULTI_INDEX: &'static str = "__set_multi_index";
 
-    fn new(mc: &Mutation<'gc>) -> Self {
+    fn new(ctx: Context<'gc>) -> Self {
         Self {
-            bind: Callback::from_fn(mc, |ctx, mut exec| {
+            bind: Callback::from_fn(ctx, |ctx, mut exec| {
                 let (obj, func): (Option<Value>, Function) = exec.stack().consume(ctx)?;
 
                 match obj {
@@ -140,7 +140,7 @@ impl<'gc> BuiltIns<'gc> {
                 }
             }),
 
-            pcall: Callback::from_fn(mc, |ctx, mut exec| {
+            pcall: Callback::from_fn(ctx, |ctx, mut exec| {
                 let function: Function = exec.stack().from_index(ctx, 0)?;
                 let res = {
                     let mut sub_exec = exec.with_stack_bottom(1);
@@ -164,27 +164,27 @@ impl<'gc> BuiltIns<'gc> {
                 Ok(())
             }),
 
-            get_super: Callback::from_fn(mc, |ctx, mut exec| {
+            get_super: Callback::from_fn(ctx, |ctx, mut exec| {
                 let obj: Object = exec.stack().consume(ctx)?;
                 exec.stack().replace(ctx, obj.parent());
                 Ok(())
             }),
 
-            set_super: Callback::from_fn(mc, |ctx, mut exec| {
+            set_super: Callback::from_fn(ctx, |ctx, mut exec| {
                 let (obj, parent): (Object, Option<Object>) = exec.stack().consume(ctx)?;
                 obj.set_parent(&ctx, parent)?;
                 exec.stack().replace(ctx, obj);
                 Ok(())
             }),
 
-            init_constructor_super: Callback::from_fn(mc, |ctx, mut exec| {
+            init_constructor_super: Callback::from_fn(ctx, |ctx, mut exec| {
                 let closure: Closure = exec.stack().consume(ctx)?;
                 exec.stack()
                     .replace(ctx, closure.prototype().init_constructor_super(&ctx));
                 Ok(())
             }),
 
-            get_constructor_super: Callback::from_fn(mc, |ctx, mut exec| {
+            get_constructor_super: Callback::from_fn(ctx, |ctx, mut exec| {
                 let closure: Closure = exec.stack().consume(ctx)?;
                 exec.stack()
                     .replace(ctx, closure.prototype().constructor_super());
@@ -195,7 +195,7 @@ impl<'gc> BuiltIns<'gc> {
                 // An iterator function whose state is the single value for iteration and the
                 // control variable is expected to be `true` on the first iteration and `false`
                 // afterwards.
-                let singleton_iter = Callback::from_fn(mc, |_, mut exec| {
+                let singleton_iter = Callback::from_fn(ctx, |_, mut exec| {
                     let state = exec.stack().get(0);
                     let yield_state = exec.stack().get(1).cast_bool();
                     exec.stack().clear();
@@ -205,43 +205,47 @@ impl<'gc> BuiltIns<'gc> {
                     Ok(())
                 });
 
-                Callback::from_fn_with_root(mc, singleton_iter, |&singleton_iter, ctx, mut exec| {
-                    let target: Value = exec.stack().consume(ctx)?;
-                    match target {
-                        Value::Object(object) => {
-                            // Objects are a loop with one iteration over the object itself.
-                            exec.stack().push_back(singleton_iter);
-                            exec.stack().push_back(object);
-                            exec.stack().push_back(Value::Boolean(true));
-                            Ok(())
-                        }
-                        Value::UserData(user_data) => {
-                            match user_data.iter(ctx)? {
-                                UserDataIter::Singleton => {
-                                    // Singleton userdata are a loop with one iteration over the
-                                    // userdata itself.
-                                    exec.stack().push_back(singleton_iter);
-                                    exec.stack().push_back(user_data);
-                                    exec.stack().push_back(Value::Boolean(true));
-                                }
-                                UserDataIter::Iter {
-                                    iter,
-                                    state,
-                                    control,
-                                } => {
-                                    exec.stack().replace(ctx, (iter, state, control));
-                                }
+                Callback::from_fn_with_root(
+                    ctx,
+                    singleton_iter,
+                    |&singleton_iter, ctx, mut exec| {
+                        let target: Value = exec.stack().consume(ctx)?;
+                        match target {
+                            Value::Object(object) => {
+                                // Objects are a loop with one iteration over the object itself.
+                                exec.stack().push_back(singleton_iter);
+                                exec.stack().push_back(object);
+                                exec.stack().push_back(Value::Boolean(true));
+                                Ok(())
                             }
-                            Ok(())
+                            Value::UserData(user_data) => {
+                                match user_data.iter(ctx)? {
+                                    UserDataIter::Singleton => {
+                                        // Singleton userdata are a loop with one iteration over the
+                                        // userdata itself.
+                                        exec.stack().push_back(singleton_iter);
+                                        exec.stack().push_back(user_data);
+                                        exec.stack().push_back(Value::Boolean(true));
+                                    }
+                                    UserDataIter::Iter {
+                                        iter,
+                                        state,
+                                        control,
+                                    } => {
+                                        exec.stack().replace(ctx, (iter, state, control));
+                                    }
+                                }
+                                Ok(())
+                            }
+                            _ => Err(RuntimeError::msg(
+                                "with loop target must be object or userdata",
+                            )),
                         }
-                        _ => Err(RuntimeError::msg(
-                            "with loop target must be object or userdata",
-                        )),
-                    }
-                })
+                    },
+                )
             },
 
-            get_multi_index: Callback::from_fn(mc, |ctx, mut exec| {
+            get_multi_index: Callback::from_fn(ctx, |ctx, mut exec| {
                 let mut stack = exec.stack();
 
                 let (target, indexes) = match &*stack {
@@ -305,7 +309,7 @@ impl<'gc> BuiltIns<'gc> {
                 Ok(())
             }),
 
-            set_multi_index: Callback::from_fn(mc, |ctx, mut exec| {
+            set_multi_index: Callback::from_fn(ctx, |ctx, mut exec| {
                 let mut stack = exec.stack();
 
                 let (target, value, indexes) = match &*stack {
@@ -431,6 +435,6 @@ impl<'gc> BuiltIns<'gc> {
 
 impl<'gc> Singleton<'gc> for BuiltIns<'gc> {
     fn create(ctx: Context<'gc>) -> Self {
-        BuiltIns::new(&ctx)
+        BuiltIns::new(ctx)
     }
 }

@@ -11,7 +11,7 @@ use std::{
 use anyhow::{Context, Error};
 use fabricator_stdlib::Pointer;
 use fabricator_vm as vm;
-use gc_arena::{Collect, Mutation};
+use gc_arena::Collect;
 use libloading::Library;
 
 use crate::project::{ExtensionFile, FfiType};
@@ -29,7 +29,7 @@ pub fn load_extension_file<'gc>(
             let mut callbacks = HashMap::new();
             for function in &file.functions {
                 let callback = get_extension_callback(
-                    &ctx,
+                    ctx,
                     &library,
                     &function.external_name,
                     &function.arg_types,
@@ -151,7 +151,7 @@ macro_rules! call_for_all_signatures {
 }
 
 fn get_extension_callback<'gc>(
-    mc: &Mutation<'gc>,
+    ctx: vm::Context<'gc>,
     library: &Rc<Library>,
     symbol: &str,
     arg_types: &[FfiType],
@@ -163,15 +163,15 @@ fn get_extension_callback<'gc>(
                 let callback = unsafe {
                     match ret_type {
                         FfiType::Number => {
-                            vm::Callback::new(
-                                mc,
+                            vm::Callback::with_callback(
+                                ctx,
                                 FfiFn::<FfiNumber, ($($arg_type,)*)>::new(library, symbol)?,
                                 None,
                             )
                         }
                         FfiType::Pointer => {
-                            vm::Callback::new(
-                                mc,
+                            vm::Callback::with_callback(
+                                ctx,
                                 FfiFn::<FfiPointer, ($($arg_type,)*)>::new(library, symbol)?,
                                 None,
                             )

@@ -21,26 +21,24 @@ pub struct DsGrid<'gc> {
     array: Box<[Lock<vm::Value<'gc>>]>,
     width: usize,
     height: usize,
-    counter: i64,
+    numeric_id: i64,
 }
 
 impl<'gc> DsGrid<'gc> {
     pub fn new(width: usize, height: usize) -> Self {
-        static COUNTER: atomic::AtomicI64 = atomic::AtomicI64::new(0);
-        let counter = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
+        static NUMERIC_ID: atomic::AtomicI64 = atomic::AtomicI64::new(0);
+        let numeric_id = NUMERIC_ID.fetch_add(1, atomic::Ordering::Relaxed);
 
         Self {
             array: vec![Lock::new(vm::Value::Undefined); width.checked_mul(height).unwrap()]
                 .into_boxed_slice(),
-            counter,
+            numeric_id,
             width,
             height,
         }
     }
 
     pub fn into_userdata(self, ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct DsGridMethods;
 
         impl<'gc> vm::UserDataMethods<'gc> for DsGridMethods {
@@ -79,7 +77,7 @@ impl<'gc> DsGrid<'gc> {
             }
 
             fn coerce_integer(&self, ud: vm::UserData<'gc>, _ctx: vm::Context<'gc>) -> Option<i64> {
-                Some(DsGrid::downcast(ud).unwrap().counter)
+                Some(DsGrid::downcast(ud).unwrap().numeric_id)
             }
         }
 
@@ -89,7 +87,7 @@ impl<'gc> DsGrid<'gc> {
 
         impl<'gc> vm::Singleton<'gc> for DsGridMethodsSingleton<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, DsGridMethods);
+                let methods = ctx.alloc_static(DsGridMethods);
                 DsGridMethodsSingleton(gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>))
             }
         }
@@ -224,10 +222,19 @@ pub fn ds_grid_height<'gc>(
     Ok(DsGrid::downcast(grid)?.height as isize)
 }
 
+/// Only clears the grid, as all objects in fabricator are automatically GCed.
+pub fn ds_grid_destroy<'gc>(
+    ctx: vm::Context<'gc>,
+    grid: vm::UserData<'gc>,
+) -> Result<(), vm::BadUserDataType> {
+    ds_grid_clear(ctx, (grid, vm::Value::Undefined))
+}
+
 pub fn ds_grid_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "ds_grid_create", ds_grid_create);
     lib.insert_callback(ctx, "ds_grid_set_region", ds_grid_set_region);
     lib.insert_callback(ctx, "ds_grid_clear", ds_grid_clear);
     lib.insert_callback(ctx, "ds_grid_width", ds_grid_width);
     lib.insert_callback(ctx, "ds_grid_height", ds_grid_height);
+    lib.insert_callback(ctx, "ds_grid_destroy", ds_grid_destroy);
 }

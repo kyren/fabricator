@@ -13,23 +13,21 @@ use crate::util::MagicExt as _;
 #[collect(no_drop)]
 pub struct DsList<'gc> {
     inner: RefLock<Vec<vm::Value<'gc>>>,
-    counter: i64,
+    numeric_id: i64,
 }
 
 impl<'gc> DsList<'gc> {
     pub fn new() -> Self {
-        static COUNTER: atomic::AtomicI64 = atomic::AtomicI64::new(0);
-        let counter = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
+        static NUMERIC_ID: atomic::AtomicI64 = atomic::AtomicI64::new(0);
+        let numeric_id = NUMERIC_ID.fetch_add(1, atomic::Ordering::Relaxed);
 
         Self {
             inner: RefLock::new(Vec::new()),
-            counter,
+            numeric_id,
         }
     }
 
     pub fn into_userdata(self, ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct DsListMethods;
 
         impl<'gc> vm::UserDataMethods<'gc> for DsListMethods {
@@ -74,7 +72,7 @@ impl<'gc> DsList<'gc> {
             }
 
             fn coerce_integer(&self, ud: vm::UserData<'gc>, _ctx: vm::Context<'gc>) -> Option<i64> {
-                Some(DsList::downcast(ud).unwrap().counter)
+                Some(DsList::downcast(ud).unwrap().numeric_id)
             }
         }
 
@@ -84,7 +82,7 @@ impl<'gc> DsList<'gc> {
 
         impl<'gc> vm::Singleton<'gc> for DsListMethodsSingleton<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, DsListMethods);
+                let methods = ctx.alloc_static(DsListMethods);
                 DsListMethodsSingleton(gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>))
             }
         }
@@ -185,6 +183,17 @@ pub fn ds_list_clear<'gc>(
     Ok(())
 }
 
+/// Only resets the list, as all objects in fabricator are automatically GCed.
+pub fn ds_list_destroy<'gc>(
+    ctx: vm::Context<'gc>,
+    ds_list: vm::UserData<'gc>,
+) -> Result<(), vm::BadUserDataType> {
+    let ds_list = DsList::downcast_write(&ctx, ds_list)?;
+    let mut vec = DsList::borrow_mut(ds_list);
+    *vec = Vec::new();
+    Ok(())
+}
+
 pub fn ds_list_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "ds_list_create", ds_list_create);
     lib.insert_exec_callback(ctx, "ds_list_add", ds_list_add);
@@ -192,4 +201,5 @@ pub fn ds_list_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "ds_list_delete", ds_list_delete);
     lib.insert_callback(ctx, "ds_list_size", ds_list_size);
     lib.insert_callback(ctx, "ds_list_clear", ds_list_clear);
+    lib.insert_callback(ctx, "ds_list_destroy", ds_list_destroy);
 }
