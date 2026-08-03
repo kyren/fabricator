@@ -312,7 +312,7 @@ pub fn string_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_exec_callback(ctx, "string_byte_length", string_byte_length);
     lib.insert_callback(ctx, "ord", ord);
     lib.insert_exec_callback(ctx, "show_debug_message", show_debug_message);
-    lib.insert_constant(ctx, "string", vm::Callback::from_fn(&ctx, string));
+    lib.insert_constant(ctx, "string", vm::Callback::from_fn(ctx, string));
     lib.insert_callback(ctx, "string_char_at", string_char_at);
     lib.insert_callback(ctx, "string_digits", string_digits);
     lib.insert_callback(ctx, "string_pos", string_pos);

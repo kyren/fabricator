@@ -18,7 +18,7 @@ arrayvec = "0.7"
 bitflags = "2.11"
 clap = { version = "4.5", features = ["derive"] }
 either = "1.0"
-gc-arena = "0.7"
+gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "e907a7e90c9b8428bca43bfb1ddc26e300ed5c3a" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 log = "0.4"
 num = "0.4"

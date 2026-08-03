@@ -1,9 +1,9 @@
 use fabricator_vm as vm;
-use gc_arena::{Collect, Gc, Mutation};
+use gc_arena::{Collect, Gc};
 use thiserror::Error;
 
 pub fn create_magic_ro<'gc>(
-    mc: &Mutation<'gc>,
+    ctx: vm::Context<'gc>,
     read: impl Fn(vm::Context<'gc>) -> Result<vm::Value<'gc>, vm::RuntimeError> + 'static,
 ) -> Gc<'gc, dyn vm::Magic<'gc>> {
     #[derive(Collect)]
@@ -21,11 +21,11 @@ pub fn create_magic_ro<'gc>(
         }
     }
 
-    gc_arena::unsize!(Gc::new(mc, Magic { read }) => dyn vm::Magic)
+    gc_arena::unsize!(ctx.alloc(Magic { read }) => dyn vm::Magic)
 }
 
 pub fn create_magic_rw<'gc>(
-    mc: &Mutation<'gc>,
+    ctx: vm::Context<'gc>,
     read: impl Fn(vm::Context<'gc>) -> Result<vm::Value<'gc>, vm::RuntimeError> + 'static,
     write: impl Fn(vm::Context<'gc>, vm::Value<'gc>) -> Result<(), vm::RuntimeError> + 'static,
 ) -> Gc<'gc, dyn vm::Magic<'gc>> {
@@ -58,7 +58,7 @@ pub fn create_magic_rw<'gc>(
         }
     }
 
-    gc_arena::unsize!(Gc::new(mc, Magic { read, write }) => dyn vm::Magic)
+    gc_arena::unsize!(ctx.alloc(Magic { read, write }) => dyn vm::Magic)
 }
 
 #[derive(Debug, Error)]
@@ -79,7 +79,7 @@ pub trait MagicExt<'gc> {
     /// Convenience method to add any value that implements the `Magic` trait.
     fn add_impl<M>(
         &mut self,
-        mc: &Mutation<'gc>,
+        ctx: vm::Context<'gc>,
         name: vm::String<'gc>,
         magic: M,
     ) -> Result<usize, DuplicateMagicName>
@@ -89,7 +89,7 @@ pub trait MagicExt<'gc> {
     /// Convenience method to add a read-only magic variable which always contains a constant value.
     fn add_constant(
         &mut self,
-        mc: &Mutation<'gc>,
+        ctx: vm::Context<'gc>,
         name: vm::String<'gc>,
         value: impl Into<vm::Value<'gc>>,
     ) -> Result<usize, DuplicateMagicName>;
@@ -118,23 +118,23 @@ impl<'gc> MagicExt<'gc> for vm::MagicSet<'gc> {
 
     fn add_impl<M>(
         &mut self,
-        mc: &Mutation<'gc>,
+        ctx: vm::Context<'gc>,
         name: vm::String<'gc>,
         magic: M,
     ) -> Result<usize, DuplicateMagicName>
     where
         M: vm::Magic<'gc> + Collect<'gc> + 'gc,
     {
-        self.add(name, gc_arena::unsize!(Gc::new(mc, magic) => dyn vm::Magic))
+        self.add(name, gc_arena::unsize!(ctx.alloc(magic) => dyn vm::Magic))
     }
 
     fn add_constant(
         &mut self,
-        mc: &Mutation<'gc>,
+        ctx: vm::Context<'gc>,
         name: vm::String<'gc>,
         value: impl Into<vm::Value<'gc>>,
     ) -> Result<usize, DuplicateMagicName> {
-        self.add(name, vm::MagicConstant::new_ptr(mc, value.into()))
+        self.add(name, vm::MagicConstant::new_ptr(&ctx, value.into()))
     }
 
     fn merge_unique(&mut self, other: &vm::MagicSet<'gc>) -> Result<(), DuplicateMagicName> {

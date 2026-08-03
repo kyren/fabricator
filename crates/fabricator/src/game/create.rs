@@ -551,7 +551,7 @@ fn load_scripts(
             for file in &extension.files {
                 if let Some(callbacks) = load_extension_file(ctx, file)? {
                     for (name, callback) in callbacks {
-                        magic.add_constant(&ctx, name, callback)?;
+                        magic.add_constant(ctx, name, callback)?;
                     }
                 }
             }
