@@ -25,14 +25,14 @@ pub fn tiles_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     let mut magic = vm::MagicSet::new();
 
     magic
-        .add_constant(&ctx, ctx.intern("tile_index_mask"), (1 << 20) - 1)
+        .add_constant(ctx, ctx.intern("tile_index_mask"), (1 << 20) - 1)
         .unwrap();
 
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("layer_tilemap_get_id"),
-            vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+            vm::Callback::from_fn(ctx, |ctx, mut exec| {
                 let mut stack = exec.stack();
                 let layer_id_or_name: vm::Value = stack.consume(ctx)?;
                 State::ctx_with(ctx, |state| {
@@ -51,9 +51,9 @@ pub fn tiles_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
 
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("tilemap_tileset"),
-            vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+            vm::Callback::from_fn(ctx, |ctx, mut exec| {
                 let (tile_map_ud, tile_set_ud): (vm::UserData, vm::UserData) =
                     exec.stack().consume(ctx)?;
                 let tile_set_id = TileSetUserData::downcast(tile_set_ud)?.id;
@@ -69,9 +69,9 @@ pub fn tiles_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
 
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("tilemap_get_x"),
-            vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+            vm::Callback::from_fn(ctx, |ctx, mut exec| {
                 State::ctx_with(ctx, |state| {
                     let tile_map_ud: vm::UserData = exec.stack().consume(ctx)?;
                     let tile_map_id = find_tile_map(state, tile_map_ud)?;
@@ -85,9 +85,9 @@ pub fn tiles_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
 
     magic
         .add_constant(
-            &ctx,
+            ctx,
             ctx.intern("tilemap_get_y"),
-            vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+            vm::Callback::from_fn(ctx, |ctx, mut exec| {
                 State::ctx_with(ctx, |state| {
                     let tile_map_ud: vm::UserData = exec.stack().consume(ctx)?;
                     let tile_map_id = find_tile_map(state, tile_map_ud)?;

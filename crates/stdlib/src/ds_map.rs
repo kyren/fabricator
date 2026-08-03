@@ -54,23 +54,21 @@ impl<'gc> MapKey<'gc> {
 #[collect(no_drop)]
 pub struct DsMap<'gc> {
     inner: RefLock<FxHashMap<MapKey<'gc>, vm::Value<'gc>>>,
-    counter: i64,
+    numeric_id: i64,
 }
 
 impl<'gc> DsMap<'gc> {
     pub fn new() -> Self {
-        static COUNTER: atomic::AtomicI64 = atomic::AtomicI64::new(0);
-        let counter = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
+        static NUMERIC_ID: atomic::AtomicI64 = atomic::AtomicI64::new(0);
+        let numeric_id = NUMERIC_ID.fetch_add(1, atomic::Ordering::Relaxed);
 
         Self {
             inner: Default::default(),
-            counter,
+            numeric_id,
         }
     }
 
     pub fn into_userdata(self, ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct DsMapMethods;
 
         impl<'gc> vm::UserDataMethods<'gc> for DsMapMethods {
@@ -112,7 +110,7 @@ impl<'gc> DsMap<'gc> {
             }
 
             fn coerce_integer(&self, ud: vm::UserData<'gc>, _ctx: vm::Context<'gc>) -> Option<i64> {
-                Some(DsMap::downcast(ud).unwrap().counter)
+                Some(DsMap::downcast(ud).unwrap().numeric_id)
             }
         }
 
@@ -122,7 +120,7 @@ impl<'gc> DsMap<'gc> {
 
         impl<'gc> vm::Singleton<'gc> for DsMapMethodsSingleton<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
-                let methods = Gc::new(&ctx, DsMapMethods);
+                let methods = ctx.alloc_static(DsMapMethods);
                 DsMapMethodsSingleton(gc_arena::unsize!(methods => dyn vm::UserDataMethods<'gc>))
             }
         }
@@ -169,12 +167,8 @@ pub fn ds_map_keys_to_array<'gc>(
     ctx: vm::Context<'gc>,
     map: vm::UserData<'gc>,
 ) -> Result<vm::Array<'gc>, vm::TypeError> {
-    let map = match DsMap::downcast(map) {
-        Ok(v) => Ok(v),
-        Err(fabricator_vm::BadUserDataType) => {
-            Err(vm::TypeError::new("DsMap", "a different user data"))
-        }
-    }?;
+    let map =
+        DsMap::downcast(map).map_err(|_| vm::TypeError::new("DsMap", "a different user data"))?;
 
     let map = map.borrow();
     Ok(vm::Array::from_iter(
@@ -197,26 +191,31 @@ pub fn ds_map_keys_to_array<'gc>(
 /// Deletes a key from a ds map. Returns the value, if there was any, within the map.
 pub fn ds_map_delete<'gc>(
     ctx: vm::Context<'gc>,
-    (map, key): (vm::Value<'gc>, vm::Value<'gc>),
+    (map, key): (vm::UserData<'gc>, vm::Value<'gc>),
 ) -> Result<vm::Value<'gc>, vm::TypeError> {
-    let map = match map {
-        vm::Value::UserData(user_data) => match DsMap::downcast_write(&ctx, user_data) {
-            Ok(v) => Ok(v),
-            Err(fabricator_vm::BadUserDataType) => {
-                Err(vm::TypeError::new("DsMap", "a different user data"))
-            }
-        },
-        other => Err(vm::TypeError::new("user data", other.type_name())),
-    }?;
-
+    let map = DsMap::downcast_write(&ctx, map)
+        .map_err(|_| vm::TypeError::new("DsMap", "a different user data"))?;
     let mut map = DsMap::borrow_mut(map);
 
     let key = MapKey::new(key);
     Ok(map.remove(&key).unwrap_or(vm::Value::Undefined))
 }
 
+/// Only resets the map, as all objects in fabricator are automatically GCed.
+pub fn ds_map_destroy<'gc>(
+    ctx: vm::Context<'gc>,
+    map: vm::UserData<'gc>,
+) -> Result<(), vm::TypeError> {
+    let map = DsMap::downcast_write(&ctx, map)
+        .map_err(|_| vm::TypeError::new("DsMap", "a different user data"))?;
+    let mut map = DsMap::borrow_mut(map);
+    *map = FxHashMap::default();
+    Ok(())
+}
+
 pub fn ds_map_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_callback(ctx, "ds_map_create", ds_map_create);
     lib.insert_callback(ctx, "ds_map_keys_to_array", ds_map_keys_to_array);
     lib.insert_callback(ctx, "ds_map_delete", ds_map_delete);
+    lib.insert_callback(ctx, "ds_map_destroy", ds_map_destroy);
 }

@@ -371,7 +371,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             } else {
                 None
             },
-            Gc::new(&self.ctx, heap.into_boxed_slice()),
+            Gc::new_slice(&self.ctx, &heap),
         )?
         .into();
         Ok(())

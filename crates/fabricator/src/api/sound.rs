@@ -2,8 +2,8 @@ use fabricator_vm as vm;
 
 use crate::{
     api::{
-        magic::{DuplicateMagicName, MagicExt as _},
         id_user_data::NamedIdUserData,
+        magic::{DuplicateMagicName, MagicExt as _},
     },
     state::{Configuration, State, configuration::SoundId},
 };
@@ -17,10 +17,10 @@ pub fn sound_api<'gc>(
     let mut magic = vm::MagicSet::new();
 
     for sound in config.sounds.values() {
-        magic.add_constant(&ctx, ctx.intern(&sound.name), ctx.fetch(&sound.userdata))?;
+        magic.add_constant(ctx, ctx.intern(&sound.name), ctx.fetch(&sound.userdata))?;
     }
 
-    let audio_sound_length = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let audio_sound_length = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sound: vm::UserData = exec.stack().consume(ctx)?;
         let sound_id = SoundUserData::downcast(sound)?.id;
         let duration = State::ctx_with(ctx, |state| state.config.sounds[sound_id].duration)?;
@@ -28,7 +28,7 @@ pub fn sound_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(&ctx, ctx.intern("audio_sound_length"), audio_sound_length)
+        .add_constant(ctx, ctx.intern("audio_sound_length"), audio_sound_length)
         .unwrap();
 
     Ok(magic)

@@ -74,13 +74,13 @@ pub fn assets_api<'gc>(
         (AssetType::TileSet, "asset_tiles"),
     ] {
         magic.add_constant(
-            &ctx,
+            ctx,
             ctx.intern(type_name),
             vm::UserData::new_static(&ctx, asset_type),
         )?;
     }
 
-    let asset_get_ids = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let asset_get_ids = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let asset_type: vm::UserData = exec.stack().consume(ctx)?;
         let asset_type = *asset_type.downcast_static::<AssetType>()?;
         let ids = vm::Array::new(&ctx);
@@ -159,10 +159,10 @@ pub fn assets_api<'gc>(
         exec.stack().replace(ctx, ids);
         Ok(())
     });
-    magic.add_constant(&ctx, ctx.intern("asset_get_ids"), asset_get_ids)?;
+    magic.add_constant(ctx, ctx.intern("asset_get_ids"), asset_get_ids)?;
 
     let asset_get_index =
-        vm::Callback::from_fn_with_root(&ctx, assets_map, |&assets_map, ctx, mut exec| {
+        vm::Callback::from_fn_with_root(ctx, assets_map, |&assets_map, ctx, mut exec| {
             let name: vm::String = exec.stack().consume(ctx)?;
             let asset = assets_map
                 .get(&name)
@@ -172,10 +172,10 @@ pub fn assets_api<'gc>(
             exec.stack().replace(ctx, asset);
             Ok(())
         });
-    magic.add_constant(&ctx, ctx.intern("asset_get_index"), asset_get_index)?;
+    magic.add_constant(ctx, ctx.intern("asset_get_index"), asset_get_index)?;
 
     let asset_has_tags =
-        vm::Callback::from_fn_with_root(&ctx, assets_map, |&assets_map, ctx, mut exec| {
+        vm::Callback::from_fn_with_root(ctx, assets_map, |&assets_map, ctx, mut exec| {
             let (name_or_id, tag_or_tags): (vm::Value, vm::Value) = exec.stack().consume(ctx)?;
             let id =
                 if let vm::Value::UserData(ud) = name_or_id {
@@ -239,7 +239,7 @@ pub fn assets_api<'gc>(
             exec.stack().replace(ctx, has_tags);
             Ok(())
         });
-    magic.add_constant(&ctx, ctx.intern("asset_has_tags"), asset_has_tags)?;
+    magic.add_constant(ctx, ctx.intern("asset_has_tags"), asset_has_tags)?;
 
     Ok(magic)
 }
