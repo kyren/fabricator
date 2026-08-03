@@ -12,7 +12,7 @@ use crate::{
 pub fn collision_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     let mut magic = vm::MagicSet::new();
 
-    let collision_line = vm::Callback::from_fn(&ctx, |ctx, mut exec| {
+    let collision_line = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (x1, y1, x2, y2, _obj, _prec, notme): (f64, f64, f64, f64, vm::UserData, bool, bool) =
             exec.stack().consume(ctx)?;
 
@@ -60,7 +60,7 @@ pub fn collision_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(&ctx, ctx.intern("collision_line"), collision_line)
+        .add_constant(ctx, ctx.intern("collision_line"), collision_line)
         .unwrap();
 
     magic

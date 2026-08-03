@@ -76,15 +76,15 @@ impl<'gc> Object<'gc> {
 
     /// Get a value from this object or any parent object.
     pub fn get(self, key: String<'gc>) -> Option<Value<'gc>> {
-        let mut state = self.0;
+        let mut object = self.0;
         loop {
-            let s = state.borrow();
+            let s = object.borrow();
             if let Some(v) = s.map.get(&key).copied() {
                 return Some(v);
             }
 
             if let Some(parent) = s.parent {
-                state = parent.0;
+                object = parent.0;
             } else {
                 return None;
             }
