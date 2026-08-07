@@ -245,27 +245,13 @@ impl<'gc, 'a> Execution<'gc, 'a> {
     ) -> Result<(), RuntimeError> {
         self.thread.frames.push(Frame::Callback(callback));
 
-        struct DropCallbackFrame<'gc, 'a>(Execution<'gc, 'a>);
-
-        impl<'gc, 'a> Drop for DropCallbackFrame<'gc, 'a> {
-            fn drop(&mut self) {
-                assert!(matches!(
-                    self.0.thread.frames.pop(),
-                    Some(Frame::Callback(_))
-                ));
-            }
-        }
-
-        let mut drop_frame = DropCallbackFrame(self.reborrow());
-        let mut exec = drop_frame.0.reborrow();
-
         // Push the callback's bound `this` value if it has one.
         let mut exec = if let this = callback.this()
             && !this.is_undefined()
         {
-            exec.with_this(this)
+            self.with_this(this)
         } else {
-            exec
+            self.reborrow()
         };
 
         if let Some(hook_state) = &mut exec.thread.hook_state {
@@ -287,6 +273,9 @@ impl<'gc, 'a> Execution<'gc, 'a> {
                 },
             );
         }
+
+        drop(exec);
+        assert!(matches!(self.thread.frames.pop(), Some(Frame::Callback(_))));
 
         res
     }

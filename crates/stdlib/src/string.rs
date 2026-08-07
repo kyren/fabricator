@@ -504,122 +504,144 @@ fn pretty_print_value<'gc>(
     exec: Option<vm::Execution<'gc, '_>>,
     value: vm::Value<'gc>,
 ) -> Result<(), PrintValueError> {
-    fn print_value_inner<'gc>(
-        f: &mut dyn fmt::Write,
+    struct State<'gc, 'a, 'b> {
+        writer: &'a mut dyn fmt::Write,
         ctx: vm::Context<'gc>,
-        mut exec: Option<vm::Execution<'gc, '_>>,
-        recursive_check: &mut HashSet<*const ()>,
+        exec: Option<&'a mut vm::Execution<'gc, 'b>>,
+        recursive_check: HashSet<*const ()>,
+        object_stack: Vec<(vm::String<'gc>, vm::Value<'gc>)>,
+        array_stack: Vec<vm::Value<'gc>>,
+    }
+
+    fn print_value_inner<'gc, 'a, 'b>(
+        state: &mut State<'gc, 'a, 'b>,
         quoted: bool,
         value: vm::Value<'gc>,
     ) -> Result<(), PrintValueError> {
         match value {
             vm::Value::String(s) => {
                 if quoted {
-                    write!(f, "{:?}", s)?;
+                    write!(state.writer, "{:?}", s)?;
                 } else {
-                    write!(f, "{}", s)?;
+                    write!(state.writer, "{}", s)?;
                 }
                 Ok(())
             }
             vm::Value::Object(object) => {
-                if let Some(exec) = &mut exec
-                    && let Some(to_string) = object.get(ctx.intern("toString"))
+                if let Some(exec) = &mut state.exec
+                    && let Some(to_string) = object.get(state.ctx.intern("toString"))
                 {
-                    let to_string: vm::Function = vm::FromValue::from_value(ctx, to_string)
+                    let to_string: vm::Function = vm::FromValue::from_value(state.ctx, to_string)
                         .map_err(vm::RuntimeError::from)?;
                     exec.with_this(object)
-                        .call(ctx, to_string)
+                        .call(state.ctx, to_string)
                         .map_err(vm::RuntimeError::from)?;
-                    let s: vm::String =
-                        exec.stack().consume(ctx).map_err(vm::RuntimeError::from)?;
+                    let s: vm::String = exec
+                        .stack()
+                        .consume(state.ctx)
+                        .map_err(vm::RuntimeError::from)?;
 
                     if quoted {
-                        write!(f, "{:?}", s)?;
+                        write!(state.writer, "{:?}", s)?;
                     } else {
-                        write!(f, "{}", s)?;
+                        write!(state.writer, "{}", s)?;
                     }
                     Ok(())
                 } else {
                     let obj_ptr = Gc::as_ptr(object.into_inner()) as *const ();
-                    if recursive_check.insert(obj_ptr) {
-                        let object = object.borrow();
-                        write!(f, "{{")?;
-                        let mut iter = object.map.iter().map(|(&k, &v)| (k, v)).peekable();
-                        while let Some((key, value)) = iter.next() {
-                            write!(f, " {}: ", key)?;
-                            print_value_inner(
-                                f,
-                                ctx,
-                                exec.as_mut().map(|e| e.reborrow()),
-                                recursive_check,
-                                true,
-                                value,
-                            )?;
-                            if iter.peek().is_some() {
-                                write!(f, ",")?;
-                            } else {
-                                write!(f, " ")?;
-                            }
-                        }
-                        recursive_check.remove(&obj_ptr);
-                        Ok(write!(f, "}}")?)
-                    } else {
-                        Ok(write!(f, "<recursive object>")?)
+                    if !state.recursive_check.insert(obj_ptr) {
+                        return Ok(write!(state.writer, "<recursive object>")?);
                     }
+
+                    let obj_base = state.object_stack.len();
+                    state
+                        .object_stack
+                        .extend(object.borrow().map.iter().map(|(&k, &v)| (k, v)));
+                    let obj_len = state.object_stack.len() - obj_base;
+
+                    write!(state.writer, "{{")?;
+                    for i in obj_base..obj_len {
+                        let (key, value) = state.object_stack[i];
+                        write!(state.writer, " {}: ", key)?;
+                        print_value_inner(state, true, value)?;
+                        if i + 1 < obj_len {
+                            write!(state.writer, ",")?;
+                        } else {
+                            write!(state.writer, " ")?;
+                        }
+                    }
+
+                    state.object_stack.truncate(obj_base);
+                    state.recursive_check.remove(&obj_ptr);
+
+                    Ok(write!(state.writer, "}}")?)
                 }
             }
             vm::Value::Array(array) => {
                 let array_ptr = Gc::as_ptr(array.into_inner()) as *const ();
-                if recursive_check.insert(array_ptr) {
-                    let array = array.borrow();
-                    write!(f, "[")?;
-                    let mut iter = array.iter().copied().peekable();
-                    while let Some(value) = iter.next() {
-                        print_value_inner(
-                            f,
-                            ctx,
-                            exec.as_mut().map(|e| e.reborrow()),
-                            recursive_check,
-                            true,
-                            value,
-                        )?;
-                        if iter.peek().is_some() {
-                            write!(f, ", ")?;
-                        }
-                    }
-                    recursive_check.remove(&array_ptr);
-                    write!(f, "]")?;
-                } else {
-                    write!(f, "<recursive array>")?;
+                if !state.recursive_check.insert(array_ptr) {
+                    return Ok(write!(state.writer, "<recursive array>")?);
                 }
+
+                let arr_base = state.array_stack.len();
+                state.array_stack.extend(array.borrow().iter().copied());
+                let arr_len = state.array_stack.len() - arr_base;
+
+                write!(state.writer, "[")?;
+                for i in arr_base..arr_len {
+                    print_value_inner(state, true, value)?;
+                    if i + 1 < arr_len {
+                        write!(state.writer, ", ")?;
+                    }
+                }
+
+                state.array_stack.truncate(arr_len);
+                state.recursive_check.remove(&array_ptr);
+
+                write!(state.writer, "]")?;
 
                 Ok(())
             }
             vm::Value::UserData(user_data) => {
-                match user_data.coerce_string(ctx) {
-                    Some(s) => write!(f, "{:?}", s)?,
-                    None => write!(f, "{}", value)?,
+                match user_data.coerce_string(state.ctx) {
+                    Some(s) => write!(state.writer, "{:?}", s)?,
+                    None => write!(state.writer, "{}", value)?,
                 };
                 Ok(())
             }
-            _ => Ok(write!(f, "{}", value)?),
+            _ => Ok(write!(state.writer, "{}", value)?),
         }
     }
 
     if let Some(mut exec) = exec {
         let stack_top = exec.stack().len();
         let r = print_value_inner(
-            f,
-            ctx,
-            Some(exec.with_stack_bottom(stack_top)),
-            &mut HashSet::new(),
+            &mut State {
+                writer: f,
+                ctx,
+                exec: Some(&mut exec.with_stack_bottom(stack_top)),
+                recursive_check: HashSet::new(),
+                object_stack: Vec::new(),
+                array_stack: Vec::new(),
+            },
             false,
             value,
         );
         exec.stack().drain(stack_top..);
         r
     } else {
-        print_value_inner(f, ctx, None, &mut HashSet::new(), false, value)
+        print_value_inner(
+            &mut State {
+                writer: f,
+                ctx,
+                exec: None,
+                recursive_check: HashSet::new(),
+                object_stack: Vec::new(),
+                array_stack: Vec::new(),
+            },
+            false,
+            value,
+        )
     }
 }
 

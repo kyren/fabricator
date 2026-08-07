@@ -8,5 +8,3 @@ license.workspace = true
 gc-arena.workspace = true
 thiserror.workspace = true
 rustc-hash.workspace = true
-
-fabricator-util.workspace = true

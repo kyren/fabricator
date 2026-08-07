@@ -841,7 +841,6 @@ dependencies = [
 name = "fabricator-vm"
 version = "0.1.0"
 dependencies = [
- "fabricator-util",
  "gc-arena",
  "rustc-hash 2.1.2",
  "thiserror 2.0.18",
