@@ -87,6 +87,10 @@ impl<'gc> Context<'gc> {
         self.state.zst_cache
     }
 
+    /// Allocate a ZST using the cached ZST pointer.
+    ///
+    /// Returns `None` if the type is not a ZST or has alignment greater than
+    /// [`MAX_ZST_CACHE_ALIGN`].
     pub fn alloc_zst<T: 'gc>(self) -> Option<Gc<'gc, T>> {
         self.state.zst_cache.alloc_zst()
     }
