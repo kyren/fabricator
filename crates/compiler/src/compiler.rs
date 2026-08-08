@@ -589,7 +589,7 @@ pub struct CompileOutput<'gc> {
     pub all_prototypes: Vec<(ir::Function<vm::String<'gc>>, Gc<'gc, vm::Prototype<'gc>>)>,
 }
 
-/// A version of [`CompilerOutput`] for a single chunk.
+/// A version of [`CompileOutput`] for a single chunk.
 pub struct ChunkOutput<'gc> {
     pub exported_imports: ImportItems<'gc>,
     pub chunk_prototype: Gc<'gc, vm::Prototype<'gc>>,
