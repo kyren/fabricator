@@ -41,7 +41,7 @@ pub enum AccessError {
 /// Works by providing only limited access to the held value within an enclosing call to
 /// [`FreezeCell::with`] or [`FreezeCell::with_mut`].
 pub struct FreezeCell<F: for<'f> Freeze<'f>> {
-    cell: RefCell<Option<<F as Freeze<'static>>::Frozen>>,
+    inner: FreezeRefCell<F>,
 }
 
 impl<F: for<'f> Freeze<'f>> Default for FreezeCell<F> {
@@ -55,7 +55,7 @@ impl<F: for<'f> Freeze<'f>> FreezeCell<F> {
     #[inline]
     pub const fn new() -> FreezeCell<F> {
         FreezeCell {
-            cell: RefCell::new(None),
+            inner: RefCell::new(None),
         }
     }
 
@@ -73,56 +73,18 @@ impl<F: for<'f> Freeze<'f>> FreezeCell<F> {
     /// panic.
     #[inline]
     pub fn freeze<'f, R>(&self, v: <F as Freeze<'f>>::Frozen, f: impl FnOnce() -> R) -> R {
-        // SAFETY: Safety depends on a few things...
+        // SAFETY:
         //
-        // 1) We turn non-'static values into a 'static ones, outside code should never be able to
-        //    observe the held 'static value, because it lies about the true lifetime.
+        // 1) The real lifetime of the set value lasts at least as long as the body of this
+        //    function, and the value is unset before this function returns because the returned
+        //    guard is always dropped.
         //
-        // 2) The only way to interact with the held 'static value is through `FreezeCell::with` and
-        //    `FreezeCell::with_mut`, both of which require a callback that works with the frozen
-        //    type for *any* lifetime. This interaction is safe because the callbacks must work for
-        //    any lifetime, so they must work with the lifetime we have erased.
-        //
-        // 3) The 'static `FreezeCell<F>` handles must have their values unset before the body
-        //    of this function ends because we only know they live for at least the body of this
-        //    function, and we use a drop guard for this.
-        let next = unsafe {
-            mem::transmute::<<F as Freeze<'f>>::Frozen, <F as Freeze<'static>>::Frozen>(v)
-        };
+        // 2) We only allow access to the set value via `FreezeCell::with` and
+        //    `FreezeCell::with_mut`, both of which require a callback that must work for *any*
+        //    lifetime, so they must work with the lifetime we have erased. User code is never able
+        //    to observe the false 'static lifetime.
 
-        let prev = self
-            .cell
-            .try_borrow_mut()
-            .expect("`FreezeCell::freeze` cannot be called inside `FreezeCell::with[_mut]`")
-            .replace(next);
-
-        struct Guard<'a, F: for<'f> Freeze<'f>> {
-            cell: &'a RefCell<Option<<F as Freeze<'static>>::Frozen>>,
-            prev: Option<<F as Freeze<'static>>::Frozen>,
-        }
-
-        impl<F: for<'f> Freeze<'f>> Drop for Guard<'_, F> {
-            #[inline]
-            fn drop(&mut self) {
-                if let Ok(mut cell) = self.cell.try_borrow_mut() {
-                    *cell = self.prev.take();
-                } else {
-                    // If the value is locked, then there is a live reference to it somewhere in the
-                    // body of a `Fozen::with[_mut]` call. We can no longer guarantee our invariants
-                    // and are forced to abort.
-                    //
-                    // This should be impossible to trigger safely.
-                    eprintln!("freeze lock held during guard drop, aborting!");
-                    std::process::abort()
-                }
-            }
-        }
-
-        let _guard = Guard::<F> {
-            cell: &self.cell,
-            prev,
-        };
-
+        let _guard = unsafe { freeze_value::<F>(&self.inner, v) };
         f()
     }
 
@@ -132,7 +94,10 @@ impl<F: for<'f> Freeze<'f>> FreezeCell<F> {
         &self,
         f: impl for<'f> FnOnce(&<F as Freeze<'f>>::Frozen) -> R,
     ) -> Result<R, AccessError> {
-        let val = self.cell.try_borrow().map_err(|_| AccessError::BadBorrow)?;
+        let val = self
+            .inner
+            .try_borrow()
+            .map_err(|_| AccessError::BadBorrow)?;
         let val = val.as_ref().ok_or(AccessError::Expired)?;
         Ok(f(val))
     }
@@ -144,7 +109,7 @@ impl<F: for<'f> Freeze<'f>> FreezeCell<F> {
         f: impl for<'f> FnOnce(&mut <F as Freeze<'f>>::Frozen) -> R,
     ) -> Result<R, AccessError> {
         let mut val = self
-            .cell
+            .inner
             .try_borrow_mut()
             .map_err(|_| AccessError::BadBorrow)?;
         let val = val.as_mut().ok_or(AccessError::Expired)?;
@@ -173,22 +138,27 @@ impl<T> FreezeMany<T> {
         self,
         cell: &'h FreezeCell<F>,
         value: <F as Freeze<'f>>::Frozen,
-    ) -> FreezeMany<(FreezeOne<'h, 'f, F>, T)> {
-        FreezeMany((FreezeOne { cell, value }, self.0))
+    ) -> FreezeMany<(T, FreezeOne<'h, 'f, F>)> {
+        FreezeMany((self.0, FreezeOne { cell, value }))
     }
 }
 
-impl<A: SetFrozen, B: SetFrozen> FreezeMany<(A, B)> {
-    /// Freeze every value provided via [`FreezeMany::freeze`] for the duration of the provided
-    /// closure.
+#[allow(private_bounds)]
+impl<T: SetFrozen> FreezeMany<T> {
+    /// Freeze every provided value for the duration of `closure`.
+    ///
+    /// Equivalent nested calls to [`FreezeCell::freeze`] for every provided value.
+    ///
+    /// # Panics
+    ///
+    /// Similarly to `FreezeCell::freeze`, calling this from within  [`FreezeCell::with`] or
+    /// [`FreezeCell::with_mut`] for any of the [`FreezeCell`]s being set will panic.
     #[inline]
     pub fn in_scope<R>(self, f: impl FnOnce() -> R) -> R {
-        self.0.set(f)
+        // SAFETY: See the implementation of `FreezeCell::freeze`.
+        let _guard = unsafe { self.0.set() };
+        f()
     }
-}
-
-pub trait SetFrozen {
-    fn set<R>(self, f: impl FnOnce() -> R) -> R;
 }
 
 pub struct FreezeOne<'h, 'f, F: for<'a> Freeze<'a>> {
@@ -197,26 +167,87 @@ pub struct FreezeOne<'h, 'f, F: for<'a> Freeze<'a>> {
 }
 
 impl<'h, 'f, F: for<'a> Freeze<'a>> SetFrozen for FreezeOne<'h, 'f, F> {
+    type Guard = FreezeGuard<'h, F>;
+
     #[inline]
-    fn set<R>(self, f: impl FnOnce() -> R) -> R {
-        let Self { cell, value } = self;
-        cell.freeze(value, f)
+    unsafe fn set(self) -> Self::Guard {
+        unsafe { freeze_value(&self.cell.inner, self.value) }
     }
 }
 
 impl SetFrozen for () {
+    type Guard = ();
+
     #[inline]
-    fn set<R>(self, f: impl FnOnce() -> R) -> R {
-        f()
-    }
+    unsafe fn set(self) {}
 }
 
 impl<A: SetFrozen, B: SetFrozen> SetFrozen for (A, B) {
+    type Guard = (A::Guard, B::Guard);
+
     #[inline]
-    fn set<R>(self, f: impl FnOnce() -> R) -> R {
-        let (a, b) = self;
-        a.set(move || b.set(f))
+    unsafe fn set(self) -> Self::Guard {
+        unsafe { (self.0.set(), self.1.set()) }
     }
+}
+
+trait SetFrozen {
+    type Guard;
+
+    unsafe fn set(self) -> Self::Guard;
+}
+
+type FreezeRefCell<F> = RefCell<Option<<F as Freeze<'static>>::Frozen>>;
+
+/// Set the previous value for a `FreezeRefCell` on drop.
+///
+/// If replacing the `FreezeRefCell` value fails, then this is assumed to be able to lead to
+/// unsafety and the drop impl will call `std::process::abort()`.
+struct FreezeGuard<'a, F: for<'f> Freeze<'f>> {
+    cell: &'a FreezeRefCell<F>,
+    prev: Option<<F as Freeze<'static>>::Frozen>,
+}
+
+impl<F: for<'f> Freeze<'f>> Drop for FreezeGuard<'_, F> {
+    #[inline]
+    fn drop(&mut self) {
+        if let Ok(mut cell) = self.cell.try_borrow_mut() {
+            *cell = self.prev.take();
+        } else {
+            // If the value is locked, then there might be a live reference to it somewhere. We can
+            // no longer guarantee our invariants and are forced to abort.
+            eprintln!("freeze lock held during guard drop, aborting!");
+            std::process::abort()
+        }
+    }
+}
+
+/// Place a new value in a `FreezeRefCell` with an *erased* lifetime and return a `FreezeGuard`
+/// which restores the previous value on drop.
+///
+/// This is used to ensure that all access to the (new) contents of the `FreezeRefCell` happens
+/// between this call and the drop of `FreezeGuard`. It is *ensured* because if `FreezeGuard`
+/// cannot restore the old contents of the cell, it will instead *abort the process*.
+///
+/// # Safety
+///
+/// The caller must ensure that the returned `FreezeGuard` is dropped before real lifetime of the
+/// set value ends. Additionally, all user access to the set value must be `for<'f>` to ensure that
+/// the accessing code works for whatever the real lifetime is.
+#[inline]
+unsafe fn freeze_value<'a, 'f, F: for<'b> Freeze<'b>>(
+    cell: &'a FreezeRefCell<F>,
+    v: <F as Freeze<'f>>::Frozen,
+) -> FreezeGuard<'a, F> {
+    let next =
+        unsafe { mem::transmute::<<F as Freeze<'f>>::Frozen, <F as Freeze<'static>>::Frozen>(v) };
+
+    let prev = cell
+        .try_borrow_mut()
+        .expect("`FreezeCell` value cannot be changed within `FreezeCell::with[_mut]`")
+        .replace(next);
+
+    FreezeGuard { cell, prev }
 }
 
 #[cfg(test)]
@@ -235,6 +266,8 @@ mod tests {
             })
             .unwrap();
         });
+
+        assert!(f.inner.borrow().is_none());
     }
 
     #[test]
@@ -248,6 +281,8 @@ mod tests {
             }),
             Err(AccessError::Expired)
         );
+
+        assert!(f.inner.borrow().is_none());
     }
 
     #[test]
@@ -264,6 +299,9 @@ mod tests {
             .in_scope(|| {
                 fa.with(|fa| assert_eq!(*fa.0, 1)).unwrap();
                 fb.with(|fb| assert_eq!(*fb.0, 2)).unwrap();
-            })
+            });
+
+        assert!(fa.inner.borrow().is_none());
+        assert!(fb.inner.borrow().is_none());
     }
 }
