@@ -266,8 +266,8 @@ impl<S: Clone + Eq + Hash> MacroSetBuilder<S> {
     /// Apply a macro configuration and resolve all inter-macro dependencies.
     ///
     /// After a successful call here, macros are guaranteed to be fully recursively expanded. All
-    /// instances of `Token::Identifier` that reference another macro in the set will be replaced
-    /// with the fully expanded macro that the identifier references.
+    /// instances of [`TokenKind::Identifier`] that reference another macro in the set will be
+    /// replaced with the fully expanded macro that the identifier references.
     ///
     /// Will return `Err` if any macro depends on itself recursively.
     ///
@@ -283,7 +283,8 @@ impl<S: Clone + Eq + Hash> MacroSetBuilder<S> {
         self.resolve_with_recursion(config, |_| true)
     }
 
-    /// A version of `MacroSet::resolve` that allows optionally skipping recursive expansion.
+    /// A version of [`MacroSetBuilder::resolve`] that allows optionally skipping recursive
+    /// expansion.
     ///
     /// For any token in a macro that matches another macro, if the `recursively_expand` callback
     /// returns false this token will *not* be recursively expanded. GMS2 skips such recursive
