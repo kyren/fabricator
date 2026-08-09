@@ -252,7 +252,8 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         let Some((instance_ud, instance_id)) = instance_ud_id else {
             return Err(vm::RuntimeError::msg(
                 "no instance userdata is currently on the `self` stack",
-            ));
+            )
+            .into());
         };
 
         let event = match *event_type.downcast_static::<EventType>()? {
