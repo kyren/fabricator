@@ -1,7 +1,6 @@
 use std::fmt;
 
 use arrayvec::ArrayVec;
-use either::Either;
 use fabricator_util::typed_id_map::{IdMap, new_id_type};
 use fabricator_vm::{FunctionRef, Span};
 
@@ -545,8 +544,6 @@ pub enum ExitKind {
         call_scope: CallScope,
         stack_base: usize,
     },
-    /// Throw the given value as an error.
-    Throw(InstId),
     Jump(BlockId),
     Branch {
         cond: BranchCondition,
@@ -564,29 +561,29 @@ impl Default for ExitKind {
 impl ExitKind {
     pub fn sources(&self) -> impl Iterator<Item = InstId> + '_ {
         match self {
-            ExitKind::Exit | ExitKind::Return { .. } => Either::Left(None),
-            ExitKind::Throw(value) => Either::Left(Some(*value)),
-            ExitKind::Branch { cond, .. } => Either::Right(cond.sources()),
-            _ => Either::Left(None),
+            ExitKind::Exit | ExitKind::Return { .. } => None,
+            ExitKind::Branch { cond, .. } => Some(cond.sources()),
+            _ => None,
         }
         .into_iter()
+        .flatten()
     }
 
     pub fn sources_mut(&mut self) -> impl Iterator<Item = &mut InstId> + '_ {
         match self {
-            ExitKind::Exit | ExitKind::Return { .. } => Either::Left(None),
-            ExitKind::Throw(value) => Either::Left(Some(value)),
-            ExitKind::Branch { cond, .. } => Either::Right(cond.sources_mut()),
-            _ => Either::Left(None),
+            ExitKind::Exit | ExitKind::Return { .. } => None,
+            ExitKind::Branch { cond, .. } => Some(cond.sources_mut()),
+            _ => None,
         }
         .into_iter()
+        .flatten()
     }
 
     pub fn successors(&self) -> impl Iterator<Item = BlockId> + '_ {
         type Array = ArrayVec<BlockId, 2>;
 
         match self {
-            ExitKind::Exit | ExitKind::Return { .. } | ExitKind::Throw(_) => Array::from_iter([]),
+            ExitKind::Exit | ExitKind::Return { .. } => Array::from_iter([]),
             &ExitKind::Jump(block_id) => Array::from_iter([block_id]),
             &ExitKind::Branch {
                 if_false, if_true, ..
@@ -599,7 +596,7 @@ impl ExitKind {
     #[must_use]
     pub fn exits_function(&self) -> bool {
         match self {
-            ExitKind::Exit | ExitKind::Return { .. } | ExitKind::Throw(_) => true,
+            ExitKind::Exit | ExitKind::Return { .. } => true,
             ExitKind::Jump(_) | ExitKind::Branch { .. } => false,
         }
     }
@@ -824,7 +821,6 @@ impl<S: AsRef<str>> Function<S> {
                     call_scope,
                     stack_base,
                 } => writeln!(f, "return({call_scope}, stack_base = {stack_base})")?,
-                ExitKind::Throw(value) => writeln!(f, "throw({value})")?,
                 ExitKind::Jump(block_id) => writeln!(f, "jump({})", block_id)?,
                 ExitKind::Branch {
                     cond,

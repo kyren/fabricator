@@ -1,4 +1,6 @@
-use std::{error::Error as StdError, fmt};
+use std::{error::Error as StdError, fmt, ops, rc::Rc, sync::Arc};
+
+use gc_arena::{Collect, Mutation, Rootable};
 
 use crate::{
     callback::Callback,
@@ -6,12 +8,13 @@ use crate::{
     debug::LineNumber,
     error::{Error, ExternError, RawGc, RuntimeError, ScriptError},
     string::SharedStr,
+    user_data::{BadUserDataType, UserData},
 };
 
 #[derive(Debug)]
 pub struct VmError<'gc> {
     pub error: Error<'gc>,
-    pub backtrace: Option<Box<[BacktraceFrame<'gc>]>>,
+    pub backtrace: Option<Backtrace<'gc>>,
 }
 
 impl<'gc> fmt::Display for VmError<'gc> {
@@ -23,7 +26,7 @@ impl<'gc> fmt::Display for VmError<'gc> {
                 writeln!(f)?;
                 write!(f, "{:>4}: ", i)?;
                 match frame {
-                    BacktraceFrame::Closure(closure_frame) => {
+                    StackFrame::Closure(closure_frame) => {
                         write!(
                             f,
                             "{}:{}",
@@ -31,7 +34,7 @@ impl<'gc> fmt::Display for VmError<'gc> {
                             closure_frame.line_number()
                         )?;
                     }
-                    BacktraceFrame::Callback(callback) => {
+                    StackFrame::Callback(callback) => {
                         write!(f, "<callback {:p}>", callback.into_inner())?;
                     }
                 }
@@ -45,9 +48,7 @@ impl<'gc> VmError<'gc> {
     pub fn into_extern(self) -> ExternVmError {
         ExternVmError {
             error: self.error.into_extern(),
-            backtrace: self
-                .backtrace
-                .map(|b| b.into_iter().map(|f| f.to_extern()).collect()),
+            backtrace: self.backtrace.map(|b| b.to_extern()),
         }
     }
 }
@@ -88,51 +89,47 @@ impl<'gc, E: StdError + Send + Sync + 'static> From<E> for VmError<'gc> {
     }
 }
 
-#[derive(Debug)]
-pub struct ExternVmError {
-    pub error: ExternError,
-    pub backtrace: Option<Box<[ExternBacktraceFrame]>>,
-}
+#[derive(Debug, Clone, Collect)]
+#[collect(no_drop)]
+pub struct Backtrace<'gc>(Rc<[StackFrame<'gc>]>);
 
-impl fmt::Display for ExternVmError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}", self.error)?;
-        if let Some(backtrace) = &self.backtrace {
-            write!(f, "VM backtrace:")?;
-            for (i, frame) in backtrace.iter().rev().enumerate() {
-                writeln!(f)?;
-                write!(f, "{:>4}: ", i)?;
-                match frame {
-                    ExternBacktraceFrame::Closure(closure_frame) => {
-                        write!(
-                            f,
-                            "{}:{}",
-                            closure_frame.chunk_name, closure_frame.line_number
-                        )?;
-                    }
-                    ExternBacktraceFrame::Callback(callback) => {
-                        write!(f, "<callback {:p}>", callback)?;
-                    }
-                }
-            }
-        }
-        Ok(())
+impl<'gc> ops::Deref for Backtrace<'gc> {
+    type Target = [StackFrame<'gc>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl StdError for ExternVmError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.error.source()
+impl<'gc> FromIterator<StackFrame<'gc>> for Backtrace<'gc> {
+    fn from_iter<T: IntoIterator<Item = StackFrame<'gc>>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct ClosureBacktraceFrame<'gc> {
+impl<'gc> Backtrace<'gc> {
+    /// Convert a backtrace into a userdata object.
+    pub fn into_userdata(self, mc: &Mutation<'gc>) -> UserData<'gc> {
+        UserData::new::<Rootable![Backtrace<'_>]>(mc, self)
+    }
+
+    pub fn from_userdata(ud: UserData<'gc>) -> Result<Backtrace<'gc>, BadUserDataType> {
+        Ok(ud.downcast::<Rootable![Backtrace<'_>]>()?.clone())
+    }
+
+    pub fn to_extern(&self) -> ExternBacktrace {
+        self.0.iter().map(|f| f.to_extern()).collect()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Collect)]
+#[collect(no_drop)]
+pub struct ClosureStackFrame<'gc> {
     pub closure: Closure<'gc>,
     pub instruction: usize,
 }
 
-impl<'gc> ClosureBacktraceFrame<'gc> {
+impl<'gc> ClosureStackFrame<'gc> {
     pub fn chunk_name(&self) -> &SharedStr {
         self.closure.prototype().chunk().name()
     }
@@ -149,8 +146,8 @@ impl<'gc> ClosureBacktraceFrame<'gc> {
         chunk.line_number(span.start())
     }
 
-    pub fn to_extern(&self) -> ExternClosureBacktraceFrame {
-        ExternClosureBacktraceFrame {
+    pub fn to_extern(&self) -> ExternClosureStackFrame {
+        ExternClosureStackFrame {
             closure: RawGc::new(self.closure.into_inner()),
             instruction: self.instruction,
             line_number: self.line_number(),
@@ -159,27 +156,83 @@ impl<'gc> ClosureBacktraceFrame<'gc> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum BacktraceFrame<'gc> {
-    Closure(ClosureBacktraceFrame<'gc>),
+#[derive(Debug, Copy, Clone, Collect)]
+#[collect(no_drop)]
+pub enum StackFrame<'gc> {
+    Closure(ClosureStackFrame<'gc>),
     Callback(Callback<'gc>),
 }
 
-impl<'gc> BacktraceFrame<'gc> {
-    pub fn to_extern(&self) -> ExternBacktraceFrame {
+impl<'gc> StackFrame<'gc> {
+    pub fn to_extern(&self) -> ExternStackFrame {
         match self {
-            BacktraceFrame::Closure(closure_backtrace_frame) => {
-                ExternBacktraceFrame::Closure(closure_backtrace_frame.to_extern())
+            StackFrame::Closure(closure_backtrace_frame) => {
+                ExternStackFrame::Closure(closure_backtrace_frame.to_extern())
             }
-            BacktraceFrame::Callback(callback) => {
-                ExternBacktraceFrame::Callback(RawGc::new(callback.into_inner()))
+            StackFrame::Callback(callback) => {
+                ExternStackFrame::Callback(RawGc::new(callback.into_inner()))
             }
         }
     }
 }
 
+#[derive(Debug)]
+pub struct ExternVmError {
+    pub error: ExternError,
+    pub backtrace: Option<ExternBacktrace>,
+}
+
+impl fmt::Display for ExternVmError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.error)?;
+        if let Some(backtrace) = &self.backtrace {
+            write!(f, "VM backtrace:")?;
+            for (i, frame) in backtrace.iter().rev().enumerate() {
+                writeln!(f)?;
+                write!(f, "{:>4}: ", i)?;
+                match frame {
+                    ExternStackFrame::Closure(closure_frame) => {
+                        write!(
+                            f,
+                            "{}:{}",
+                            closure_frame.chunk_name, closure_frame.line_number
+                        )?;
+                    }
+                    ExternStackFrame::Callback(callback) => {
+                        write!(f, "<callback {:p}>", callback)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl StdError for ExternVmError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.error.source()
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct ExternClosureBacktraceFrame {
+pub struct ExternBacktrace(Arc<[ExternStackFrame]>);
+
+impl ops::Deref for ExternBacktrace {
+    type Target = [ExternStackFrame];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl FromIterator<ExternStackFrame> for ExternBacktrace {
+    fn from_iter<T: IntoIterator<Item = ExternStackFrame>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternClosureStackFrame {
     pub closure: RawGc,
     pub instruction: usize,
     pub line_number: LineNumber,
@@ -187,7 +240,7 @@ pub struct ExternClosureBacktraceFrame {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExternBacktraceFrame {
-    Closure(ExternClosureBacktraceFrame),
+pub enum ExternStackFrame {
+    Closure(ExternClosureStackFrame),
     Callback(RawGc),
 }

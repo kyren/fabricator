@@ -56,36 +56,30 @@ fn test_vm_call_return_hooks() {
             fn on_call(
                 &mut self,
                 _ctx: vm::Context<'gc>,
-                backtrace: vm::Backtrace<'gc, '_>,
+                frames: vm::FrameStack<'gc, '_>,
             ) -> Result<(), vm::RuntimeError> {
                 self.frame_count.set(self.frame_count.get() + 1);
                 self.max_count
                     .set(self.max_count.get().max(self.frame_count.get()));
 
-                match backtrace.frame_depth() {
-                    1 => assert!(matches!(backtrace.frame(0), vm::BacktraceFrame::Closure(_))),
-                    2 => assert!(matches!(backtrace.frame(0), vm::BacktraceFrame::Closure(_))),
-                    3 => assert!(matches!(backtrace.frame(0), vm::BacktraceFrame::Closure(_))),
-                    4 => assert!(matches!(
-                        backtrace.frame(0),
-                        vm::BacktraceFrame::Callback(_)
-                    )),
+                match frames.frame_depth() {
+                    1 => assert!(matches!(frames.frame(0), vm::StackFrame::Closure(_))),
+                    2 => assert!(matches!(frames.frame(0), vm::StackFrame::Closure(_))),
+                    3 => assert!(matches!(frames.frame(0), vm::StackFrame::Closure(_))),
+                    4 => assert!(matches!(frames.frame(0), vm::StackFrame::Callback(_))),
                     _ => unreachable!(),
                 }
                 Ok(())
             }
 
-            fn on_return(&mut self, _ctx: vm::Context<'gc>, backtrace: vm::Backtrace<'gc, '_>) {
+            fn on_return(&mut self, _ctx: vm::Context<'gc>, frames: vm::FrameStack<'gc, '_>) {
                 self.frame_count.set(self.frame_count.get() - 1);
 
-                match backtrace.frame_depth() {
-                    1 => assert!(matches!(backtrace.frame(0), vm::BacktraceFrame::Closure(_))),
-                    2 => assert!(matches!(backtrace.frame(0), vm::BacktraceFrame::Closure(_))),
-                    3 => assert!(matches!(backtrace.frame(0), vm::BacktraceFrame::Closure(_))),
-                    4 => assert!(matches!(
-                        backtrace.frame(0),
-                        vm::BacktraceFrame::Callback(_)
-                    )),
+                match frames.frame_depth() {
+                    1 => assert!(matches!(frames.frame(0), vm::StackFrame::Closure(_))),
+                    2 => assert!(matches!(frames.frame(0), vm::StackFrame::Closure(_))),
+                    3 => assert!(matches!(frames.frame(0), vm::StackFrame::Closure(_))),
+                    4 => assert!(matches!(frames.frame(0), vm::StackFrame::Callback(_))),
                     _ => unreachable!(),
                 }
             }
@@ -123,7 +117,7 @@ fn test_vm_return_hook_on_error() {
             "vm hook test",
             r#"
                 function test1() {
-                    throw "hello";
+                    raise("hello");
                 }
 
                 function test2() {
@@ -146,15 +140,15 @@ fn test_vm_return_hook_on_error() {
             fn on_call(
                 &mut self,
                 _ctx: vm::Context<'gc>,
-                backtrace: vm::Backtrace<'gc, '_>,
+                frmaes: vm::FrameStack<'gc, '_>,
             ) -> Result<(), vm::RuntimeError> {
                 self.frame_count.set(self.frame_count.get() + 1);
-                assert!(self.frame_count.get() as usize == backtrace.frame_depth());
+                assert!(self.frame_count.get() as usize == frmaes.frame_depth());
                 Ok(())
             }
 
-            fn on_return(&mut self, _ctx: vm::Context<'gc>, backtrace: vm::Backtrace<'gc, '_>) {
-                assert!(self.frame_count.get() as usize == backtrace.frame_depth());
+            fn on_return(&mut self, _ctx: vm::Context<'gc>, frames: vm::FrameStack<'gc, '_>) {
+                assert!(self.frame_count.get() as usize == frames.frame_depth());
                 self.frame_count.set(self.frame_count.get() - 1);
             }
         }
@@ -242,17 +236,17 @@ fn test_vm_call_return_hook_count_with_error() {
             fn on_call(
                 &mut self,
                 _ctx: vm::Context<'gc>,
-                backtrace: vm::Backtrace<'gc, '_>,
+                backtrace: vm::FrameStack<'gc, '_>,
             ) -> Result<(), vm::RuntimeError> {
                 self.frame_count.set(self.frame_count.get() + 1);
-                if matches!(backtrace.frame(0), vm::BacktraceFrame::Callback(_)) {
+                if matches!(backtrace.frame(0), vm::StackFrame::Callback(_)) {
                     Err(NoCallbacksAllowed.into())
                 } else {
                     Ok(())
                 }
             }
 
-            fn on_return(&mut self, _ctx: vm::Context<'gc>, backtrace: vm::Backtrace<'gc, '_>) {
+            fn on_return(&mut self, _ctx: vm::Context<'gc>, backtrace: vm::FrameStack<'gc, '_>) {
                 assert!(self.frame_count.get() as usize == backtrace.frame_depth());
                 self.frame_count.set(self.frame_count.get() - 1);
             }

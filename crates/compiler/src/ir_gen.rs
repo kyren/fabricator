@@ -903,11 +903,7 @@ where
             ast::Statement::Switch(switch_stmt) => self.switch_stmt(switch_stmt),
             ast::Statement::With(with_stmt) => self.with_stmt(with_stmt),
             ast::Statement::TryCatch(try_catch_stmt) => self.try_catch_stmt(try_catch_stmt),
-            ast::Statement::Throw(throw_stmt) => {
-                let target = self.expression(&throw_stmt.target)?;
-                self.end_current_block(throw_stmt.span, ir::ExitKind::Throw(target));
-                Ok(())
-            }
+            ast::Statement::Throw(throw_stmt) => self.throw_stmt(throw_stmt),
             ast::Statement::Call(function_call) => {
                 let call_scope = self.open_call_expr(function_call)?;
                 self.close_call_scope(function_call.span, call_scope);
@@ -1657,6 +1653,17 @@ where
             ir::InstructionKind::CloseVariable(control_var),
         );
 
+        Ok(())
+    }
+
+    fn throw_stmt(&mut self, throw_stmt: &ast::ThrowStmt<S>) -> Result<(), IrGenError> {
+        let error = self.expression(&throw_stmt.target)?;
+        let error_fn_name = self.interner.intern(BuiltIns::ERROR);
+        let error_fn = self.push_instruction(
+            throw_stmt.span,
+            ir::InstructionKind::GetMagic(error_fn_name),
+        );
+        self.call_function::<0>(throw_stmt.span, error_fn, None, [error]);
         Ok(())
     }
 

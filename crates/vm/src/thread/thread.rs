@@ -11,7 +11,7 @@ use crate::{
     interpreter::Context,
     thread::{
         dispatch,
-        error::{BacktraceFrame, ClosureBacktraceFrame, ExternVmError},
+        error::{ClosureStackFrame, ExternVmError, StackFrame},
         stack::Stack,
         vec_end_slice::VecEndSlice,
     },
@@ -264,18 +264,18 @@ impl<'gc, 'a> Execution<'gc, 'a> {
     /// Panics if given an index that is larger than the return value of [`Execution::frame_depth`].
     #[track_caller]
     #[inline]
-    pub fn upper_frame(&self, index: usize) -> BacktraceFrame<'gc> {
+    pub fn upper_frame(&self, index: usize) -> StackFrame<'gc> {
         assert!(index < self.thread.frames.len());
-        self.thread.frames[self.thread.frames.len() - 1 - index].backtrace_frame()
+        self.thread.frames[self.thread.frames.len() - 1 - index].stack_frame()
     }
 }
 
-/// A backtrace context for some `Thread`, provided to execution hooks.
-pub struct Backtrace<'gc, 'a> {
+/// A stack context for some `Thread`, provided to execution hooks.
+pub struct FrameStack<'gc, 'a> {
     frames: &'a [Frame<'gc>],
 }
 
-impl<'gc, 'a> Backtrace<'gc, 'a> {
+impl<'gc, 'a> FrameStack<'gc, 'a> {
     /// Returns the current execution frame depth.
     ///
     /// Every function call, both normal script closures and Rust callbacks, increase the frame
@@ -299,9 +299,9 @@ impl<'gc, 'a> Backtrace<'gc, 'a> {
     /// Panics if given an index that is larger than the return value of [`Execution::frame_depth`].
     #[track_caller]
     #[inline]
-    pub fn frame(&self, index: usize) -> BacktraceFrame<'gc> {
+    pub fn frame(&self, index: usize) -> StackFrame<'gc> {
         assert!(index < self.frames.len());
-        self.frames[self.frames.len() - 1 - index].backtrace_frame()
+        self.frames[self.frames.len() - 1 - index].stack_frame()
     }
 }
 
@@ -313,7 +313,7 @@ pub trait Hook<'gc>: 'gc + DynCollect<'gc> {
     fn on_call(
         &mut self,
         _ctx: Context<'gc>,
-        _backtrace: Backtrace<'gc, '_>,
+        _frames: FrameStack<'gc, '_>,
     ) -> Result<(), RuntimeError> {
         Ok(())
     }
@@ -329,7 +329,7 @@ pub trait Hook<'gc>: 'gc + DynCollect<'gc> {
     /// This thread hook *cannot* generate synthetic runtime errors because it is too confusing: if
     /// it were allowed to generate an error and did so, the same hook still must be called after
     /// this repeatedly for every upper unwinding frame.
-    fn on_return(&mut self, _ctx: Context<'gc>, _backtrace: Backtrace<'gc, '_>) {}
+    fn on_return(&mut self, _ctx: Context<'gc>, _frames: FrameStack<'gc, '_>) {}
 
     /// Hook that is called periodically during execution of VM instructions.
     ///
@@ -426,13 +426,13 @@ enum Frame<'gc> {
 }
 
 impl<'gc> Frame<'gc> {
-    fn backtrace_frame(&self) -> BacktraceFrame<'gc> {
+    fn stack_frame(&self) -> StackFrame<'gc> {
         match self {
-            Frame::Closure(script_frame) => BacktraceFrame::Closure(ClosureBacktraceFrame {
+            Frame::Closure(script_frame) => StackFrame::Closure(ClosureStackFrame {
                 closure: script_frame.closure,
                 instruction: script_frame.dispatcher.instruction_index(),
             }),
-            &Frame::Callback(callback) => BacktraceFrame::Callback(callback),
+            &Frame::Callback(callback) => StackFrame::Callback(callback),
         }
     }
 }
@@ -482,7 +482,7 @@ impl<'gc> ThreadState<'gc> {
             if let Some(hook) = &mut this.hook {
                 hook.on_return(
                     ctx,
-                    Backtrace {
+                    FrameStack {
                         frames: &this.frames,
                     },
                 );
@@ -504,8 +504,7 @@ impl<'gc> ThreadState<'gc> {
         fn vm_error<'gc>(thread: &ThreadState<'gc>, err: impl Into<VmError<'gc>>) -> VmError<'gc> {
             let mut vm_err = err.into();
             if vm_err.backtrace.is_none() {
-                vm_err.backtrace =
-                    Some(thread.frames.iter().map(|f| f.backtrace_frame()).collect());
+                vm_err.backtrace = Some(thread.frames.iter().map(|f| f.stack_frame()).collect());
             }
             vm_err
         }
@@ -513,7 +512,7 @@ impl<'gc> ThreadState<'gc> {
         if let Some(hook) = &mut self.hook {
             if let Err(err) = hook.on_call(
                 ctx,
-                Backtrace {
+                FrameStack {
                     frames: &self.frames,
                 },
             ) {
@@ -642,7 +641,7 @@ impl<'gc> ThreadState<'gc> {
                             if let Some(hook) = &mut self.hook {
                                 if let Err(err) = hook.on_call(
                                     ctx,
-                                    Backtrace {
+                                    FrameStack {
                                         frames: &self.frames,
                                     },
                                 ) {
@@ -682,7 +681,7 @@ impl<'gc> ThreadState<'gc> {
                     if let Some(hook) = &mut self.hook {
                         hook.on_return(
                             ctx,
-                            Backtrace {
+                            FrameStack {
                                 frames: &self.frames,
                             },
                         );
@@ -721,13 +720,13 @@ impl<'gc> ThreadState<'gc> {
         if let Some(hook) = &mut self.hook {
             if let Err(err) = hook.on_call(
                 ctx,
-                Backtrace {
+                FrameStack {
                     frames: &self.frames,
                 },
             ) {
                 hook.on_return(
                     ctx,
-                    Backtrace {
+                    FrameStack {
                         frames: &self.frames,
                     },
                 );
@@ -755,7 +754,7 @@ impl<'gc> ThreadState<'gc> {
         if let Some(hook) = &mut self.hook {
             hook.on_return(
                 ctx,
-                Backtrace {
+                FrameStack {
                     frames: &self.frames,
                 },
             );

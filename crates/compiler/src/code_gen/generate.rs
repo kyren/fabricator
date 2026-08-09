@@ -724,14 +724,6 @@ fn codegen_function<S: Clone + Eq + Hash>(
 
                 vm_instructions.push((Instruction::Return {}, block.exit.span));
             }
-            ir::ExitKind::Throw(value) => {
-                vm_instructions.push((
-                    Instruction::Throw {
-                        source: reg_alloc.instruction_registers[value],
-                    },
-                    block.exit.span,
-                ));
-            }
             ir::ExitKind::Jump(block_id) => {
                 // If we are the next block in output order, we don't need to add a jump
                 if block_order_indexes[&block_id] != order_index + 1 {

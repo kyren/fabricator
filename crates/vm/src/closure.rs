@@ -413,9 +413,6 @@ impl<'gc> Prototype<'gc> {
                     verify_magic_idx(magic)?;
                     mark_reg_idx(source);
                 }
-                Instruction::Throw { source } => {
-                    mark_reg_idx(source);
-                }
                 Instruction::Jump { .. } => {}
                 Instruction::JumpIf { arg, .. } => {
                     mark_reg_idx(arg);
