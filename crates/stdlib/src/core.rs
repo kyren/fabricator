@@ -108,7 +108,7 @@ pub fn debug_get_callstack<'gc>(
 pub fn script_execute<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let mut func: vm::Function = exec.stack().from_index(ctx, 0)?;
     // `script_execute` is documented as calling the provided function in the *calling context*,
     // even if it is a bound method.
@@ -125,7 +125,7 @@ pub fn script_execute<'gc>(
 pub fn script_execute_ext<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let (mut func, args, offset, count): (
         vm::Function,
         Option<vm::Array>,
@@ -158,7 +158,7 @@ pub fn script_execute_ext<'gc>(
 pub fn method_call<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let (func, args, offset, count): (
         vm::Function,
         Option<vm::Array>,
@@ -184,7 +184,7 @@ pub fn method_call<'gc>(
 pub fn array_concat<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let array = vm::Array::new(&ctx);
     for i in 0..exec.stack().len() {
         let arr: vm::Array = exec.stack().from_index(ctx, i)?;

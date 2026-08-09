@@ -245,7 +245,7 @@ pub fn buffer_create<'gc>(
 pub fn buffer_write<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let (buffer, data_type, value): (vm::UserData, vm::UserData, vm::Value) =
         exec.stack().consume(ctx)?;
     let mut buffer = Buffer::downcast(buffer)?.inner.borrow_mut();

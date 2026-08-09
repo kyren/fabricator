@@ -8,7 +8,6 @@ use std::{
 
 use fabricator_vm as vm;
 use gc_arena::Gc;
-use thiserror::Error;
 
 use crate::util::{MagicExt as _, resolve_array_range};
 
@@ -31,7 +30,7 @@ pub fn string_trim<'gc>(
 pub fn string_length<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let value: vm::Value = exec.stack().consume(ctx)?;
     let string = value_to_string(ctx, exec.reborrow(), value)?;
     exec.stack().replace(ctx, string.chars().count() as isize);
@@ -41,7 +40,7 @@ pub fn string_length<'gc>(
 pub fn string_byte_length<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let value: vm::Value = exec.stack().consume(ctx)?;
     let string = value_to_string(ctx, exec.reborrow(), value)?;
     exec.stack().replace(ctx, string.len() as isize);
@@ -62,7 +61,7 @@ pub fn ord<'gc>(_ctx: vm::Context<'gc>, arg: vm::String<'gc>) -> Result<isize, v
 pub fn show_debug_message<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let fmt_string: vm::String = exec.stack().from_index(ctx, 0)?;
 
     let mut stdout = io::stdout().lock();
@@ -85,7 +84,7 @@ pub fn show_debug_message<'gc>(
 pub fn string<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let out = match exec.stack().get(0) {
         vm::Value::String(fmt) => {
             let mut out = String::new();
@@ -312,7 +311,7 @@ pub fn string_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_exec_callback(ctx, "string_byte_length", string_byte_length);
     lib.insert_callback(ctx, "ord", ord);
     lib.insert_exec_callback(ctx, "show_debug_message", show_debug_message);
-    lib.insert_constant(ctx, "string", vm::Callback::from_fn(ctx, string));
+    lib.insert_exec_callback(ctx, "string", string);
     lib.insert_callback(ctx, "string_char_at", string_char_at);
     lib.insert_callback(ctx, "string_digits", string_digits);
     lib.insert_callback(ctx, "string_pos", string_pos);
@@ -434,12 +433,31 @@ pub fn raw_value_to_string<'gc>(ctx: vm::Context<'gc>, value: vm::Value<'gc>) ->
     }
 }
 
-#[derive(Debug, Error)]
-pub enum PrintValueError {
-    #[error("{0}")]
-    ToStringError(#[from] vm::RuntimeError),
-    #[error("{0}")]
-    FmtError(#[from] fmt::Error),
+#[derive(Debug)]
+pub enum PrintValueError<'gc> {
+    ToStringError(vm::VmError<'gc>),
+    FmtError(fmt::Error),
+}
+
+impl<'gc> From<vm::VmError<'gc>> for PrintValueError<'gc> {
+    fn from(err: vm::VmError<'gc>) -> Self {
+        Self::ToStringError(err)
+    }
+}
+
+impl<'gc> From<fmt::Error> for PrintValueError<'gc> {
+    fn from(err: fmt::Error) -> Self {
+        Self::FmtError(err)
+    }
+}
+
+impl<'gc> PrintValueError<'gc> {
+    fn into_vm_err(self) -> vm::VmError<'gc> {
+        match self {
+            PrintValueError::ToStringError(vm_error) => vm_error,
+            PrintValueError::FmtError(error) => error.into(),
+        }
+    }
 }
 
 /// Print any [`vm::Value`], calling `toString` methods on objects if present.
@@ -450,11 +468,11 @@ pub fn print_value<'gc>(
     ctx: vm::Context<'gc>,
     exec: vm::Execution<'gc, '_>,
     value: vm::Value<'gc>,
-) -> Result<(), PrintValueError> {
+) -> Result<(), vm::VmError<'gc>> {
     if let vm::Value::String(s) = value {
         Ok(write!(f, "{}", s)?)
     } else {
-        pretty_print_value(f, ctx, Some(exec), value)
+        pretty_print_value(f, ctx, Some(exec), value).map_err(|e| e.into_vm_err())
     }
 }
 
@@ -465,7 +483,7 @@ pub fn value_to_string<'gc>(
     ctx: vm::Context<'gc>,
     exec: vm::Execution<'gc, '_>,
     value: vm::Value<'gc>,
-) -> Result<vm::String<'gc>, vm::RuntimeError> {
+) -> Result<vm::String<'gc>, vm::VmError<'gc>> {
     if let vm::Value::String(s) = value {
         Ok(s)
     } else {
@@ -503,7 +521,7 @@ fn pretty_print_value<'gc>(
     ctx: vm::Context<'gc>,
     exec: Option<vm::Execution<'gc, '_>>,
     value: vm::Value<'gc>,
-) -> Result<(), PrintValueError> {
+) -> Result<(), PrintValueError<'gc>> {
     struct State<'gc, 'a, 'b> {
         writer: &'a mut dyn fmt::Write,
         ctx: vm::Context<'gc>,
@@ -517,7 +535,7 @@ fn pretty_print_value<'gc>(
         state: &mut State<'gc, 'a, 'b>,
         quoted: bool,
         value: vm::Value<'gc>,
-    ) -> Result<(), PrintValueError> {
+    ) -> Result<(), PrintValueError<'gc>> {
         match value {
             vm::Value::String(s) => {
                 if quoted {
@@ -532,14 +550,12 @@ fn pretty_print_value<'gc>(
                     && let Some(to_string) = object.get(state.ctx.intern("toString"))
                 {
                     let to_string: vm::Function = vm::FromValue::from_value(state.ctx, to_string)
-                        .map_err(vm::RuntimeError::from)?;
+                        .map_err(vm::VmError::from)?;
                     exec.with_this(object)
                         .call(state.ctx, to_string)
-                        .map_err(vm::RuntimeError::from)?;
-                    let s: vm::String = exec
-                        .stack()
-                        .consume(state.ctx)
-                        .map_err(vm::RuntimeError::from)?;
+                        .map_err(vm::VmError::from)?;
+                    let s: vm::String =
+                        exec.stack().consume(state.ctx).map_err(vm::VmError::from)?;
 
                     if quoted {
                         write!(state.writer, "{:?}", s)?;
