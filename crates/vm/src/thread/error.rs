@@ -1,37 +1,39 @@
-use std::{error::Error as StdError, fmt, rc::Rc, sync::Arc};
+use std::{error::Error as StdError, fmt};
 
 use crate::{
     callback::Callback,
     closure::Closure,
     debug::LineNumber,
-    error::{Error, ExternError, RawGc, RuntimeError},
+    error::{Error, ExternError, RawGc, RuntimeError, ScriptError},
     string::SharedStr,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct VmError<'gc> {
     pub error: Error<'gc>,
-    pub backtrace: Rc<[BacktraceFrame<'gc>]>,
+    pub backtrace: Option<Box<[BacktraceFrame<'gc>]>>,
 }
 
 impl<'gc> fmt::Display for VmError<'gc> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{}", self.error)?;
-        write!(f, "VM backtrace:")?;
-        for (i, frame) in self.backtrace.iter().rev().enumerate() {
-            writeln!(f)?;
-            write!(f, "{:>4}: ", i)?;
-            match frame {
-                BacktraceFrame::Closure(closure_frame) => {
-                    write!(
-                        f,
-                        "{}:{}",
-                        closure_frame.chunk_name(),
-                        closure_frame.line_number()
-                    )?;
-                }
-                BacktraceFrame::Callback(callback) => {
-                    write!(f, "<callback {:p}>", callback.into_inner())?;
+        if let Some(backtrace) = &self.backtrace {
+            write!(f, "VM backtrace:")?;
+            for (i, frame) in backtrace.iter().rev().enumerate() {
+                writeln!(f)?;
+                write!(f, "{:>4}: ", i)?;
+                match frame {
+                    BacktraceFrame::Closure(closure_frame) => {
+                        write!(
+                            f,
+                            "{}:{}",
+                            closure_frame.chunk_name(),
+                            closure_frame.line_number()
+                        )?;
+                    }
+                    BacktraceFrame::Callback(callback) => {
+                        write!(f, "<callback {:p}>", callback.into_inner())?;
+                    }
                 }
             }
         }
@@ -39,50 +41,88 @@ impl<'gc> fmt::Display for VmError<'gc> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum CallError {
-    Runtime(RuntimeError),
-    Vm {
-        error: ExternError,
-        backtrace: Arc<[ExternBacktraceFrame]>,
-    },
-}
-
-impl fmt::Display for CallError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CallError::Runtime(runtime_err) => write!(f, "runtime error: {runtime_err}"),
-            CallError::Vm { error, backtrace } => {
-                writeln!(f, "{}", error)?;
-                write!(f, "VM backtrace:")?;
-                for (i, frame) in backtrace.iter().rev().enumerate() {
-                    writeln!(f)?;
-                    write!(f, "{:>4}: ", i)?;
-                    match frame {
-                        ExternBacktraceFrame::Closure(closure_frame) => {
-                            write!(
-                                f,
-                                "{}:{}",
-                                closure_frame.chunk_name, closure_frame.line_number
-                            )?;
-                        }
-                        ExternBacktraceFrame::Callback(callback) => {
-                            write!(f, "<callback {:p}>", callback)?;
-                        }
-                    }
-                }
-                Ok(())
-            }
+impl<'gc> VmError<'gc> {
+    pub fn into_extern(self) -> ExternVmError {
+        ExternVmError {
+            error: self.error.into_extern(),
+            backtrace: self
+                .backtrace
+                .map(|b| b.into_iter().map(|f| f.to_extern()).collect()),
         }
     }
 }
 
-impl StdError for CallError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            CallError::Runtime(runtime_error) => Some(runtime_error.as_ref()),
-            CallError::Vm { error, .. } => error.source(),
+impl<'gc> From<Error<'gc>> for VmError<'gc> {
+    fn from(error: Error<'gc>) -> Self {
+        Self {
+            error,
+            backtrace: None,
         }
+    }
+}
+
+impl<'gc> From<ScriptError<'gc>> for VmError<'gc> {
+    fn from(err: ScriptError<'gc>) -> Self {
+        Self {
+            error: Error::Script(err),
+            backtrace: None,
+        }
+    }
+}
+
+impl<'gc> From<RuntimeError> for VmError<'gc> {
+    fn from(err: RuntimeError) -> Self {
+        Self {
+            error: Error::Runtime(err),
+            backtrace: None,
+        }
+    }
+}
+
+impl<'gc, E: StdError + Send + Sync + 'static> From<E> for VmError<'gc> {
+    fn from(err: E) -> Self {
+        Self {
+            error: Error::Runtime(err.into()),
+            backtrace: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ExternVmError {
+    pub error: ExternError,
+    pub backtrace: Option<Box<[ExternBacktraceFrame]>>,
+}
+
+impl fmt::Display for ExternVmError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.error)?;
+        if let Some(backtrace) = &self.backtrace {
+            write!(f, "VM backtrace:")?;
+            for (i, frame) in backtrace.iter().rev().enumerate() {
+                writeln!(f)?;
+                write!(f, "{:>4}: ", i)?;
+                match frame {
+                    ExternBacktraceFrame::Closure(closure_frame) => {
+                        write!(
+                            f,
+                            "{}:{}",
+                            closure_frame.chunk_name, closure_frame.line_number
+                        )?;
+                    }
+                    ExternBacktraceFrame::Callback(callback) => {
+                        write!(f, "<callback {:p}>", callback)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl StdError for ExternVmError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.error.source()
     }
 }
 

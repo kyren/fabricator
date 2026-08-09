@@ -44,7 +44,7 @@ pub fn room_api<'gc>(
                 }
             })??,
             _ => {
-                return Err(vm::RuntimeError::msg("cannot set room to non-room value"));
+                return Err(vm::RuntimeError::msg("cannot set room to non-room value").into());
             }
         };
         State::ctx_with_mut(ctx, |state| {

@@ -171,7 +171,7 @@ fn test_vm_return_hook_on_error() {
 
         assert!(matches!(
             thread.run(ctx, closure),
-            Err(vm::CallError::Vm {
+            Err(vm::ExternVmError {
                 error: vm::ExternError::Script(vm::ExternScriptError(vm::ExternValue::String(s))),
                 ..
             }) if s.as_str() == "hello"
@@ -270,7 +270,7 @@ fn test_vm_call_return_hook_count_with_error() {
 
         assert!(matches!(
             thread.run(ctx, closure),
-            Err(vm::CallError::Vm {
+            Err(vm::ExternVmError {
                 error: vm::ExternError::Runtime(err),
                 ..
             }) if err.is::<NoCallbacksAllowed>()
@@ -338,7 +338,7 @@ fn test_vm_step_hook() {
         thread.set_hook(&ctx, TestHook(10_000));
 
         match thread.run(ctx, closure) {
-            Err(vm::CallError::Vm {
+            Err(vm::ExternVmError {
                 error: vm::ExternError::Runtime(runtime_err),
                 ..
             }) => assert!(runtime_err.is::<ExecLimitError>()),

@@ -37,8 +37,8 @@ pub use self::{
     },
     string::{InternedStrings, SharedStr, String, StringMap, StringSet},
     thread::{
-        ArrayBoundsError, Backtrace, BacktraceFrame, CallError, Execution, Hook, OpError, Stack,
-        Thread, VmError,
+        ArrayBoundsError, Backtrace, BacktraceFrame, Execution, ExternVmError, Hook, OpError,
+        Stack, Thread, VmError,
     },
     user_data::{BadUserDataType, UserData, UserDataIter, UserDataMeta, UserDataMethods},
     value::{Function, Value},

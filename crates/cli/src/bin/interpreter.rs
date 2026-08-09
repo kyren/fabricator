@@ -161,7 +161,7 @@ fn main() -> Result<ExitCode, Error> {
 
                                 let thread = ctx.fetch(&thread);
                                 thread.exec(ctx, |mut exec| {
-                                    if let Err(err) = exec.call_closure(ctx, closure) {
+                                    if let Err(err) = exec.call(ctx, closure) {
                                         eprintln!("{}", err);
                                     } else {
                                         let stack = exec.stack();

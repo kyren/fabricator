@@ -565,9 +565,9 @@ pub fn object_api<'gc>(
                 state.instances.get(instance.id).is_some_and(|i| i.active)
             })?
         } else {
-            return Err(vm::RuntimeError::msg(
-                "`instance_exists` expects an object or instance",
-            ));
+            return Err(
+                vm::RuntimeError::msg("`instance_exists` expects an object or instance").into(),
+            );
         };
         exec.stack().replace(ctx, found);
         Ok(())
@@ -595,7 +595,8 @@ pub fn object_api<'gc>(
         } else {
             return Err(vm::RuntimeError::msg(
                 "`instance_deactivate_object` expects an object or instance",
-            ));
+            )
+            .into());
         };
         Ok(())
     });
@@ -611,9 +612,7 @@ pub fn object_api<'gc>(
         let (left, top, width, height, inside): (f64, f64, f64, f64, bool) =
             exec.stack().consume(ctx)?;
         if !inside {
-            return Err(vm::RuntimeError::msg(
-                "outside instance activation unsupported",
-            ));
+            return Err(vm::RuntimeError::msg("outside instance activation unsupported").into());
         }
         State::ctx_with_mut(ctx, |state| {
             let mut query = BoundBoxQuery::default();
@@ -664,7 +663,8 @@ pub fn object_api<'gc>(
         let Some(to_destroy) = to_destroy else {
             return Err(vm::RuntimeError::msg(
                 "`instance_destroy` expects an object or instance on the `self` stack",
-            ));
+            )
+            .into());
         };
 
         for instance_id in to_destroy {

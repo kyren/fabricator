@@ -2,16 +2,22 @@ use std::{fmt, hash};
 
 use gc_arena::{Collect, Gc, Mutation};
 
-use crate::{error::RuntimeError, interpreter::Context, thread::Execution, value::Value};
+use crate::{
+    interpreter::Context,
+    thread::{Execution, VmError},
+    value::Value,
+};
 
 pub trait CallbackFn<'gc> {
-    fn call(&self, ctx: Context<'gc>, exec: Execution<'gc, '_>) -> Result<(), RuntimeError>;
+    fn call(&self, ctx: Context<'gc>, exec: Execution<'gc, '_>) -> Result<(), VmError<'gc>>;
 }
+
+pub type CallbackFnPtr<'gc> = Gc<'gc, dyn CallbackFn<'gc>>;
 
 #[derive(Copy, Clone, Collect)]
 #[collect(no_drop)]
 pub struct CallbackInner<'gc> {
-    function: Gc<'gc, dyn CallbackFn<'gc>>,
+    function: CallbackFnPtr<'gc>,
     this: Option<Value<'gc>>,
 }
 
@@ -20,11 +26,7 @@ pub struct CallbackInner<'gc> {
 pub struct Callback<'gc>(Gc<'gc, CallbackInner<'gc>>);
 
 impl<'gc> Callback<'gc> {
-    pub fn new(
-        mc: &Mutation<'gc>,
-        function: Gc<'gc, dyn CallbackFn<'gc>>,
-        this: Option<Value<'gc>>,
-    ) -> Self {
+    pub fn new(mc: &Mutation<'gc>, function: CallbackFnPtr<'gc>, this: Option<Value<'gc>>) -> Self {
         Self(Gc::new(mc, CallbackInner { function, this }))
     }
 
@@ -47,7 +49,7 @@ impl<'gc> Callback<'gc> {
     /// Returns the bare, inner callback function.
     #[must_use]
     #[inline]
-    pub fn function(self) -> Gc<'gc, dyn CallbackFn<'gc>> {
+    pub fn function(self) -> CallbackFnPtr<'gc> {
         self.0.function
     }
 
@@ -71,7 +73,7 @@ impl<'gc> Callback<'gc> {
     /// to associate GC data with this function, use [`Callback::from_fn_with_root`].
     pub fn from_fn<F>(ctx: Context<'gc>, call: F) -> Callback<'gc>
     where
-        F: 'static + Fn(Context<'gc>, Execution<'gc, '_>) -> Result<(), RuntimeError>,
+        F: 'static + Fn(Context<'gc>, Execution<'gc, '_>) -> Result<(), VmError<'gc>>,
     {
         Self::from_fn_with_root(ctx, (), move |_, ctx, exec| call(ctx, exec))
     }
@@ -80,7 +82,7 @@ impl<'gc> Callback<'gc> {
     pub fn from_fn_with_root<R, F>(ctx: Context<'gc>, root: R, call: F) -> Callback<'gc>
     where
         R: 'gc + Collect<'gc>,
-        F: 'static + Fn(&R, Context<'gc>, Execution<'gc, '_>) -> Result<(), RuntimeError>,
+        F: 'static + Fn(&R, Context<'gc>, Execution<'gc, '_>) -> Result<(), VmError<'gc>>,
     {
         #[derive(Collect)]
         #[collect(no_drop)]
@@ -93,13 +95,13 @@ impl<'gc> Callback<'gc> {
         impl<'gc, R, F> CallbackFn<'gc> for RootCallback<R, F>
         where
             R: 'gc + Collect<'gc>,
-            F: 'static + Fn(&R, Context<'gc>, Execution<'gc, '_>) -> Result<(), RuntimeError>,
+            F: 'static + Fn(&R, Context<'gc>, Execution<'gc, '_>) -> Result<(), VmError<'gc>>,
         {
             fn call(
                 &self,
                 ctx: Context<'gc>,
                 exec: Execution<'gc, '_>,
-            ) -> Result<(), RuntimeError> {
+            ) -> Result<(), VmError<'gc>> {
                 (self.call)(&self.root, ctx, exec)
             }
         }

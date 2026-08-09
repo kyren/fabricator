@@ -86,7 +86,7 @@ fn run_code(
         let thread = vm::Thread::new(&ctx);
         thread.set_hook(&ctx, VmLimiter::new());
         thread.exec(ctx, |mut exec| {
-            exec.call(ctx, closure)?;
+            exec.call(ctx, closure).map_err(|e| e.into_extern())?;
             Ok(exec.stack().get(0) == vm::Value::Boolean(true))
         })
     })
