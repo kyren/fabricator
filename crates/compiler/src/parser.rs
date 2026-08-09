@@ -27,6 +27,8 @@ pub enum ParseErrorKind {
     AccessorsDisallowed,
     #[error("`globalvar` declarations are disallowed")]
     GlobalVarDisallowed,
+    #[error("`throw` statements are disallowed")]
+    ThrowDisallowed,
 }
 
 impl ParseErrorKind {
@@ -63,6 +65,8 @@ pub struct ParseSettings {
     pub allow_accessors: bool,
     /// Allow `globalvar` declarations.
     pub allow_globalvar: bool,
+    /// Allow `throw` statements.
+    pub allow_throw: bool,
 }
 
 impl ParseSettings {
@@ -72,6 +76,7 @@ impl ParseSettings {
             allow_new: false,
             allow_accessors: false,
             allow_globalvar: false,
+            allow_throw: false,
         }
     }
 
@@ -81,6 +86,7 @@ impl ParseSettings {
             allow_new: true,
             allow_accessors: true,
             allow_globalvar: true,
+            allow_throw: true,
         }
     }
 
@@ -394,6 +400,14 @@ where
             }
             TokenKind::Throw => {
                 self.advance(1);
+
+                if !self.settings.allow_throw {
+                    return Err(ParseError {
+                        kind: ParseErrorKind::ThrowDisallowed,
+                        span: tok_span,
+                    });
+                }
+
                 let target = self.parse_expression()?;
                 let span = tok_span.combine(target.span());
                 (

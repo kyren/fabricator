@@ -89,12 +89,12 @@ pub fn debug_get_callstack<'gc>(
     let array = vm::Array::new(&ctx);
     for frame in 0..max_depth {
         let frame_desc = match exec.upper_frame(frame) {
-            vm::BacktraceFrame::Closure(closure_frame) => ctx.intern(&format!(
+            vm::StackFrame::Closure(closure_frame) => ctx.intern(&format!(
                 "{}:{}",
                 closure_frame.chunk_name(),
                 closure_frame.line_number(),
             )),
-            vm::BacktraceFrame::Callback(callback) => {
+            vm::StackFrame::Callback(callback) => {
                 ctx.intern(&vm::Value::Callback(callback).to_string())
             }
         };
@@ -285,9 +285,11 @@ pub fn variable_global_exists<'gc>(
 pub fn core_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_constant(ctx, "pointer_null", Pointer::null().into_userdata(&ctx));
 
-    // Aliases for builtins that match GMS2
+    // Aliases of builtins.
     let builtins = vm::BuiltIns::singleton(ctx);
     lib.insert_constant(ctx, "method", builtins.bind);
+    lib.insert_constant(ctx, "raise", builtins.error);
+    lib.insert_constant(ctx, "pcall", builtins.pcall);
     lib.insert_constant(ctx, "static_get", builtins.get_super);
     lib.insert_constant(ctx, "static_get", builtins.set_super);
 

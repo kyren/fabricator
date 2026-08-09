@@ -239,10 +239,6 @@ macro_rules! __for_each_instruction {
             [basic] get_magic = GetMagic { dest: RegIdx, magic: MagicIdx };
             [basic] set_magic = SetMagic { magic: MagicIdx, source: RegIdx };
 
-            [basic]
-            /// Throw an error located at the given register.
-            throw = Throw { source: RegIdx };
-
             [jump] jump = Jump { target: InstIdx };
 
             [jump]
