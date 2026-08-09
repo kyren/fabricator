@@ -418,9 +418,6 @@ enum SerializeInstruction {
         magic: MagicIdx,
         source: RegIdx,
     },
-    Throw {
-        source: RegIdx,
-    },
     Jump {
         target: InstIdx,
     },
@@ -752,7 +749,6 @@ impl SerializeInstruction {
                 magic: magic.0,
                 source: source.0,
             },
-            Instruction::Throw { source } => SerializeInstruction::Throw { source: source.0 },
             Instruction::Jump { target } => SerializeInstruction::Jump { target: target.0 },
             Instruction::JumpIf {
                 target,
@@ -1112,9 +1108,6 @@ impl SerializeInstruction {
             },
             SerializeInstruction::SetMagic { magic, source } => Instruction::SetMagic {
                 magic: magic.into(),
-                source: source.into(),
-            },
-            SerializeInstruction::Throw { source } => Instruction::Throw {
                 source: source.into(),
             },
             SerializeInstruction::Jump { target } => Instruction::Jump {

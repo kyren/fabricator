@@ -3,13 +3,13 @@ use gc_arena::{Collect, Rootable};
 use crate::{
     callback::Callback,
     closure::Closure,
-    error::RuntimeError,
+    error::{Error, RuntimeError},
     interpreter::Context,
     magic::{MagicConstant, MagicSet},
     object::Object,
     registry::Singleton,
-    thread::IndexError,
-    user_data::UserDataIter,
+    thread::{Backtrace, IndexError, VmError},
+    user_data::{UserData, UserDataIter},
     value::{Function, Value},
 };
 
@@ -30,9 +30,14 @@ pub struct BuiltIns<'gc> {
     ///     field: true,
     /// };
     ///
-    /// let f_rebound = bind(t, f);
+    /// let f_rebound = _bind(t, f);
     /// ```
     pub bind: Callback<'gc>,
+
+    /// Throw the given error, toegether with an optional backtrace.
+    ///
+    /// If a backtrace is given, it be a generated backtrace returned from `pcall`.
+    pub error: Callback<'gc>,
 
     /// Call the given function and catch any errors.
     ///
@@ -42,11 +47,12 @@ pub struct BuiltIns<'gc> {
     /// If the given function completes without error, returns `true` followed by the return values
     /// of the inner function.
     ///
-    /// If there is an error executing the given function, returns `false` followed by the error.
+    /// If there is an error executing the given function, returns `false` followed by the error and
+    /// then a backtrace if one was generated.
     ///
     /// ```fml
-    /// let success, err = pcall(function() {
-    ///     throw "my_error";
+    /// let success, err = _pcall(function() {
+    ///     _error("my_error");
     /// });
     ///
     /// assert(success == false);
@@ -68,7 +74,7 @@ pub struct BuiltIns<'gc> {
     ///     b: 2,
     /// };
     ///
-    /// super_set(obj, parent);
+    /// _set_super(obj, parent);
     ///
     /// assert(obj.a == 1);
     /// assert(obj.b == 2);
@@ -109,12 +115,13 @@ pub struct BuiltIns<'gc> {
 }
 
 impl<'gc> BuiltIns<'gc> {
-    pub const BIND: &'static str = "bind";
+    pub const BIND: &'static str = "_bind";
 
-    pub const PCALL: &'static str = "pcall";
+    pub const ERROR: &'static str = "_error";
+    pub const PCALL: &'static str = "_pcall";
 
-    pub const GET_SUPER: &'static str = "get_super";
-    pub const SET_SUPER: &'static str = "set_super";
+    pub const GET_SUPER: &'static str = "_get_super";
+    pub const SET_SUPER: &'static str = "_set_super";
 
     pub const INIT_CONSTRUCTOR_SUPER: &'static str = "__init_constructor_super";
     pub const GET_CONSTRUCTOR_SUPER: &'static str = "__get_constructor_super";
@@ -141,6 +148,18 @@ impl<'gc> BuiltIns<'gc> {
                 }
             }),
 
+            error: Callback::from_fn(ctx, |ctx, mut exec| {
+                let (err, backtrace): (Value, Option<UserData>) = exec.stack().consume(ctx)?;
+                Err(VmError {
+                    error: Error::from_value(err),
+                    backtrace: if let Some(backtrace) = backtrace {
+                        Some(Backtrace::from_userdata(backtrace)?)
+                    } else {
+                        None
+                    },
+                })
+            }),
+
             pcall: Callback::from_fn(ctx, |ctx, mut exec| {
                 let function: Function = exec.stack().from_index(ctx, 0)?;
                 let res = exec.with_stack_bottom(1).call(ctx, function);
@@ -149,7 +168,14 @@ impl<'gc> BuiltIns<'gc> {
                         exec.stack()[0] = true.into();
                     }
                     Err(err) => {
-                        exec.stack().replace(ctx, (false, err.error.to_value(ctx)));
+                        exec.stack().replace(
+                            ctx,
+                            (
+                                false,
+                                err.error.to_value(ctx),
+                                err.backtrace.map(|b| b.into_userdata(&ctx)),
+                            ),
+                        );
                     }
                 }
                 Ok(())
@@ -381,6 +407,11 @@ impl<'gc> BuiltIns<'gc> {
         magic_set.insert(
             ctx.intern(Self::BIND),
             MagicConstant::new_ptr(&ctx, self.bind),
+        );
+
+        magic_set.insert(
+            ctx.intern(Self::ERROR),
+            MagicConstant::new_ptr(&ctx, self.error),
         );
 
         magic_set.insert(

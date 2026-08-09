@@ -82,7 +82,7 @@ impl ByteCode {
 
         if !matches!(
             insts.last(),
-            Some(Instruction::Jump { .. } | Instruction::Return { .. } | Instruction::Throw { .. })
+            Some(Instruction::Jump { .. } | Instruction::Return { .. })
         ) {
             return Err(ByteCodeEncodingError::BadLastInstruction);
         }
