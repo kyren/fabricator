@@ -42,7 +42,7 @@ fn run_code(
         fn on_call(
             &mut self,
             _ctx: vm::Context<'gc>,
-            _backtrace: vm::Backtrace<'gc, '_>,
+            _frames: vm::FrameStack<'gc, '_>,
         ) -> Result<(), vm::RuntimeError> {
             if let Some(dec) = self.frames_available.checked_sub(1) {
                 self.frames_available = dec;
@@ -52,7 +52,7 @@ fn run_code(
             }
         }
 
-        fn on_return(&mut self, _ctx: vm::Context<'gc>, _backtrace: vm::Backtrace<'gc, '_>) {
+        fn on_return(&mut self, _ctx: vm::Context<'gc>, _frames: vm::FrameStack<'gc, '_>) {
             self.frames_available += 1;
         }
 

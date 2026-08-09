@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::{
     array::Array,
     closure::{Closure, Constant, HeapVar, HeapVarDescriptor},
-    error::{Error, ExternValue, RuntimeError, ScriptError},
+    error::{Error, ExternValue, RuntimeError},
     instructions::{self, ConstIdx, HeapIdx, IndexType as _, MagicIdx, ProtoIdx, RegIdx, StackIdx},
     interpreter::Context,
     object::Object,
@@ -1050,11 +1050,6 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             .expect("magic idx is not valid");
         magic.set(self.ctx, self.registers[source.index()])?;
         Ok(())
-    }
-
-    #[inline]
-    fn throw(&mut self, source: RegIdx) -> Result<(), Self::Error> {
-        Err(ScriptError::new(self.registers[source.index()]).into())
     }
 
     #[inline]
