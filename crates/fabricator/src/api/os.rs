@@ -96,7 +96,7 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
 
     let show_error = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let arg: vm::String = exec.stack().consume(ctx)?;
-        Err(vm::RuntimeError::msg(arg.as_str().to_owned()))
+        Err(vm::RuntimeError::msg(arg.as_str().to_owned()).into())
     });
     magic
         .add_constant(ctx, ctx.intern("show_error"), show_error)

@@ -217,7 +217,11 @@ macro_rules! impl_ffi_signature {
 
         impl<'gc> vm::CallbackFn<'gc> for FfiFn<$ret_type, ($($arg_type,)*)> {
             #[allow(non_snake_case)]
-            fn call(&self, ctx: vm::Context<'gc>, mut exec: vm::Execution<'gc, '_>) -> Result<(), vm::RuntimeError> {
+            fn call(
+                &self,
+                ctx: vm::Context<'gc>,
+                mut exec: vm::Execution<'gc, '_>
+            ) -> Result<(), vm::VmError<'gc>> {
                 let ($($arg_name,)*): ($($arg_type,)*) = exec.stack().consume(ctx)?;
                 let fn_ptr: extern "C" fn($($arg_type),*) -> $ret_type = unsafe { mem::transmute(self.fn_ptr) };
                 let ret = (fn_ptr)($($arg_name),*);
