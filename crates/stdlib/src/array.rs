@@ -20,7 +20,7 @@ pub fn array_create<'gc>(
 pub fn array_create_ext<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let (length, create): (usize, vm::Function) = exec.stack().consume(ctx)?;
     let array = vm::Array::with_capacity(&ctx, length);
 
@@ -131,7 +131,7 @@ pub fn array_pop<'gc>(
 pub fn array_sort<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let (array, comparator): (vm::Array, Option<vm::Value>) = exec.stack().consume(ctx)?;
     sort_array(
         ctx,
@@ -153,7 +153,7 @@ pub fn array_contains<'gc>(
 pub fn array_map<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let (input, function, index, count): (vm::Array, vm::Function, Option<isize>, Option<isize>) =
         exec.stack().consume(ctx)?;
     let (range, _) = resolve_array_range(input.len(), index, count)?;
@@ -229,7 +229,7 @@ pub fn array_insert<'gc>(
 pub fn array_any<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     let (input, function): (vm::Array<'gc>, vm::Function<'gc>) = exec.stack().consume(ctx)?;
 
     let len = input.len();
@@ -271,7 +271,7 @@ fn sort_array<'gc>(
     mut exec: vm::Execution<'gc, '_>,
     array: vm::Array<'gc>,
     comparator: vm::Value<'gc>,
-) -> Result<(), vm::RuntimeError> {
+) -> Result<(), vm::VmError<'gc>> {
     #[derive(Copy, Clone)]
     enum SortBy<'gc> {
         Ascending,
@@ -354,7 +354,7 @@ fn sort_array<'gc>(
         sort_by: SortBy<'gc>,
         lhs: vm::Value<'gc>,
         rhs: vm::Value<'gc>,
-    ) -> Result<cmp::Ordering, vm::RuntimeError> {
+    ) -> Result<cmp::Ordering, vm::VmError<'gc>> {
         Ok(match sort_by {
             SortBy::Ascending => value_cmp(lhs, rhs),
             SortBy::Descending => value_cmp(rhs, lhs),
@@ -371,7 +371,8 @@ fn sort_array<'gc>(
                 } else {
                     return Err(vm::RuntimeError::msg(
                         "numeric value returned by comparator is NaN",
-                    ));
+                    )
+                    .into());
                 }
             }
         })
@@ -383,7 +384,7 @@ fn sort_array<'gc>(
         sort_by: SortBy<'gc>,
         array: &mut [vm::Value<'gc>],
         pivot: usize,
-    ) -> Result<usize, vm::RuntimeError> {
+    ) -> Result<usize, vm::VmError<'gc>> {
         let last = array.len() - 1;
         array.swap(pivot, last);
         let mut i = 0;
@@ -403,7 +404,7 @@ fn sort_array<'gc>(
         sort_by: SortBy<'gc>,
         rng: &mut impl rand::Rng,
         array: &mut [vm::Value<'gc>],
-    ) -> Result<(), vm::RuntimeError> {
+    ) -> Result<(), vm::VmError<'gc>> {
         if array.len() <= 1 {
             return Ok(());
         }

@@ -6,12 +6,12 @@ use gc_arena::{
 use crate::{
     callback::Callback,
     closure::{Closure, SharedValue},
-    error::{Error, RuntimeError},
+    error::RuntimeError,
     instructions,
     interpreter::Context,
     thread::{
         dispatch,
-        error::{BacktraceFrame, CallError, ClosureBacktraceFrame},
+        error::{BacktraceFrame, ClosureBacktraceFrame, ExternVmError},
         stack::Stack,
         vec_end_slice::VecEndSlice,
     },
@@ -77,8 +77,9 @@ impl<'gc> Thread<'gc> {
         self,
         ctx: Context<'gc>,
         function: impl Into<Function<'gc>>,
-    ) -> Result<(), CallError> {
+    ) -> Result<(), ExternVmError> {
         self.exec(ctx, |mut exec| exec.call(ctx, function))
+            .map_err(VmError::into_extern)
     }
 
     /// Run a function on this `Thread` with the given value of `self` and discard all return
@@ -88,8 +89,9 @@ impl<'gc> Thread<'gc> {
         ctx: Context<'gc>,
         function: impl Into<Function<'gc>>,
         this: impl Into<Value<'gc>>,
-    ) -> Result<(), CallError> {
+    ) -> Result<(), ExternVmError> {
         self.exec(ctx, |mut exec| exec.with_this(this).call(ctx, function))
+            .map_err(VmError::into_extern)
     }
 
     /// Create a top-level [`Execution`] context outside of a callback.
@@ -220,92 +222,21 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         }
     }
 
-    /// Within a callback, call the given closure using the parent `Thread`.
+    /// Within a callback, call the given function using the parent `Thread`.
     ///
     /// Arguments to the closure will be taken from the stack and returns placed back into the
     /// stack.
-    #[inline]
-    pub fn call_closure(
-        &mut self,
-        ctx: Context<'gc>,
-        closure: Closure<'gc>,
-    ) -> Result<(), VmError<'gc>> {
-        self.thread.call_closure(ctx, closure, self.stack_bottom)
-    }
-
-    #[inline]
-    pub fn call_callback(
-        &mut self,
-        ctx: Context<'gc>,
-        callback: Callback<'gc>,
-    ) -> Result<(), RuntimeError> {
-        self.thread
-            .call_callback(ctx, callback, self.stack_bottom, callback.this())
-    }
-
-    /// Call a `Function` within a callback.
-    ///
-    /// Arguments to the function will be taken from the stack and returns placed back into the
-    /// stack.
-    ///
-    /// Closure and callback errors are converted into `CallError` in a smart way appropriate for
-    /// calling a function from within a callback on its calling thread. If the provided function is
-    /// a callback that errors and the returned `RuntimeError` wraps a `CallError`, then the inner
-    /// `CallError` will be returned. If the provided function is a closure which errors and the
-    /// returned `VmError` contains a `CallError`, then the inner `CallError` will be returned
-    /// with an inner VM backtrace if present, or the outer VM backtrace if not present. In this
-    /// way, callbacks that call functions using `Execution::call` will not add extra layers
-    /// of `CallError`, only the *innermost* errors and backtraces will be returned, and since
-    /// execution took place on the same `Thread`, the backtrace will already show all outer
-    /// callbacks.
     #[inline]
     pub fn call(
         &mut self,
         ctx: Context<'gc>,
         function: impl Into<Function<'gc>>,
-    ) -> Result<(), CallError> {
+    ) -> Result<(), VmError<'gc>> {
         match function.into() {
-            Function::Closure(closure) => {
-                if let Err(vm_err) = self.call_closure(ctx, closure) {
-                    if let Error::Runtime(rte) = &vm_err.error {
-                        if let Some(call_err) = rte.downcast_ref::<CallError>() {
-                            return Err(match call_err {
-                                CallError::Runtime(runtime_error) => CallError::Vm {
-                                    error: runtime_error.clone().into(),
-                                    backtrace: vm_err
-                                        .backtrace
-                                        .into_iter()
-                                        .map(|f| f.to_extern())
-                                        .collect(),
-                                },
-                                CallError::Vm { .. } => call_err.clone(),
-                            });
-                        }
-                    }
-
-                    Err(CallError::Vm {
-                        error: vm_err.error.into_extern(),
-                        backtrace: vm_err
-                            .backtrace
-                            .into_iter()
-                            .map(|f| f.to_extern())
-                            .collect(),
-                    })
-                } else {
-                    Ok(())
-                }
-            }
+            Function::Closure(closure) => self.thread.call_closure(ctx, closure, self.stack_bottom),
             Function::Callback(callback) => {
-                let res = self.call_callback(ctx, callback);
-                if let Err(err) = res {
-                    if let Some(call_err) = err.downcast_ref::<CallError>() {
-                        Err(call_err.clone())
-                    } else {
-                        Err(CallError::Runtime(err))
-                    }
-                } else {
-                    Ok(())
-                }
+                self.thread
+                    .call_callback(ctx, callback, self.stack_bottom, callback.this())
             }
         }
     }
@@ -570,12 +501,13 @@ impl<'gc> ThreadState<'gc> {
             }
         }
 
-        fn vm_error<'gc>(thread: &ThreadState<'gc>, err: impl Into<Error<'gc>>) -> VmError<'gc> {
-            VmError {
-                error: err.into(),
-                backtrace: thread.frames.iter().map(|f| f.backtrace_frame()).collect(),
+        fn vm_error<'gc>(thread: &ThreadState<'gc>, err: impl Into<VmError<'gc>>) -> VmError<'gc> {
+            let mut vm_err = err.into();
+            if vm_err.backtrace.is_none() {
+                vm_err.backtrace =
+                    Some(thread.frames.iter().map(|f| f.backtrace_frame()).collect());
             }
-            .into()
+            vm_err
         }
 
         if let Some(hook) = &mut self.hook {
@@ -626,7 +558,7 @@ impl<'gc> ThreadState<'gc> {
                     if remaining_insts == 0 {
                         match frame.dispatcher.dispatch_loop(&mut dispatch) {
                             Ok(next) => break next,
-                            Err(err) => break 'step err,
+                            Err(err) => break 'step err.into(),
                         }
                     }
 
@@ -646,7 +578,7 @@ impl<'gc> ThreadState<'gc> {
 
                         match res {
                             Ok(next) => break next,
-                            Err(err) => break 'step err,
+                            Err(err) => break 'step err.into(),
                         }
                     } else {
                         match hook.on_step(ctx, remaining_insts) {
@@ -660,7 +592,7 @@ impl<'gc> ThreadState<'gc> {
             } else {
                 match frame.dispatcher.dispatch_loop(&mut dispatch) {
                     Ok(next) => next,
-                    Err(err) => break err,
+                    Err(err) => break err.into(),
                 }
             };
 
@@ -724,7 +656,7 @@ impl<'gc> ThreadState<'gc> {
 
                             if let Err(err) = self.call_callback(ctx, callback, stack_bottom, this)
                             {
-                                break err.into();
+                                break err;
                             }
                         }
                     }
@@ -782,7 +714,7 @@ impl<'gc> ThreadState<'gc> {
         callback: Callback<'gc>,
         stack_bottom: usize,
         with_this: Option<Value<'gc>>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<(), VmError<'gc>> {
         let this_bottom = self.this.len();
         self.frames.push(Frame::Callback(callback));
 
@@ -801,7 +733,7 @@ impl<'gc> ThreadState<'gc> {
                 );
                 // Pop the callback frame.
                 assert!(matches!(self.frames.pop(), Some(Frame::Callback(_))));
-                return Err(err);
+                return Err(err.into());
             }
         }
 

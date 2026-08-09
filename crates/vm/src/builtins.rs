@@ -136,29 +136,20 @@ impl<'gc> BuiltIns<'gc> {
                     }
                     _ => Err(RuntimeError::msg(
                         "self value must be an object, userdata, or undefined",
-                    )),
+                    )
+                    .into()),
                 }
             }),
 
             pcall: Callback::from_fn(ctx, |ctx, mut exec| {
                 let function: Function = exec.stack().from_index(ctx, 0)?;
-                let res = {
-                    let mut sub_exec = exec.with_stack_bottom(1);
-                    match function {
-                        Function::Closure(closure) => {
-                            sub_exec.call_closure(ctx, closure).map_err(|e| e.error)
-                        }
-                        Function::Callback(callback) => {
-                            sub_exec.call_callback(ctx, callback).map_err(|e| e.into())
-                        }
-                    }
-                };
+                let res = exec.with_stack_bottom(1).call(ctx, function);
                 match res {
                     Ok(_) => {
                         exec.stack()[0] = true.into();
                     }
                     Err(err) => {
-                        exec.stack().replace(ctx, (false, err.to_value(ctx)));
+                        exec.stack().replace(ctx, (false, err.error.to_value(ctx)));
                     }
                 }
                 Ok(())
@@ -239,7 +230,8 @@ impl<'gc> BuiltIns<'gc> {
                             }
                             _ => Err(RuntimeError::msg(
                                 "with loop target must be object or userdata",
-                            )),
+                            )
+                            .into()),
                         }
                     },
                 )
