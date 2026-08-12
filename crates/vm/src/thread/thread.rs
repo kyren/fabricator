@@ -155,6 +155,18 @@ impl<'gc, 'a> Execution<'gc, 'a> {
         Stack::new(&mut self.thread.stack, self.stack_bottom)
     }
 
+    /// Return a new execution context with a stack starting at the new provided bottom value.
+    #[track_caller]
+    #[inline]
+    pub fn with_stack_bottom(&mut self, stack_bottom: usize) -> Execution<'gc, '_> {
+        assert!(self.thread.stack.len() >= self.stack_bottom + stack_bottom);
+        Execution {
+            thread: self.thread,
+            stack_bottom: self.stack_bottom + stack_bottom,
+            this_bottom: self.this_bottom,
+        }
+    }
+
     /// Return the current number of *explicitly set* values on the `self` stack.
     ///
     /// There is always implicitly an unlimited number of `ctx.globals()` present below the last
@@ -182,18 +194,6 @@ impl<'gc, 'a> Execution<'gc, 'a> {
             .rev()
             .nth(nth)
             .unwrap_or(ctx.globals().into())
-    }
-
-    /// Return a new execution context with a stack starting at the new provided bottom value.
-    #[track_caller]
-    #[inline]
-    pub fn with_stack_bottom(&mut self, stack_bottom: usize) -> Execution<'gc, '_> {
-        assert!(self.thread.stack.len() >= self.stack_bottom + stack_bottom);
-        Execution {
-            thread: self.thread,
-            stack_bottom: self.stack_bottom + stack_bottom,
-            this_bottom: self.this_bottom,
-        }
     }
 
     /// Return a new execution context with a new `self` value pushed from the one provided.
@@ -570,6 +570,14 @@ impl<'gc> ThreadState<'gc> {
             }
         }
 
+        fn vm_error<'gc>(thread: &ThreadState<'gc>, err: impl Into<Error<'gc>>) -> VmError<'gc> {
+            VmError {
+                error: err.into(),
+                backtrace: thread.frames.iter().map(|f| f.backtrace_frame()).collect(),
+            }
+            .into()
+        }
+
         if let Some(hook) = &mut self.hook {
             if let Err(err) = hook.on_call(
                 ctx,
@@ -577,14 +585,9 @@ impl<'gc> ThreadState<'gc> {
                     frames: &self.frames,
                 },
             ) {
-                let backtrace = self.frames.iter().map(|f| f.backtrace_frame()).collect();
+                let err = vm_error(self, err);
                 unwind_closure_frame(self, ctx);
-
-                return Err(VmError {
-                    error: err.into(),
-                    backtrace,
-                }
-                .into());
+                return Err(err);
             }
         }
 
@@ -623,7 +626,7 @@ impl<'gc> ThreadState<'gc> {
                     if remaining_insts == 0 {
                         match frame.dispatcher.dispatch_loop(&mut dispatch) {
                             Ok(next) => break next,
-                            Err(err) => break 'step err.into(),
+                            Err(err) => break 'step err,
                         }
                     }
 
@@ -643,7 +646,7 @@ impl<'gc> ThreadState<'gc> {
 
                         match res {
                             Ok(next) => break next,
-                            Err(err) => break 'step err.into(),
+                            Err(err) => break 'step err,
                         }
                     } else {
                         match hook.on_step(ctx, remaining_insts) {
@@ -657,7 +660,7 @@ impl<'gc> ThreadState<'gc> {
             } else {
                 match frame.dispatcher.dispatch_loop(&mut dispatch) {
                     Ok(next) => next,
-                    Err(err) => break err.into(),
+                    Err(err) => break err,
                 }
             };
 
@@ -764,17 +767,13 @@ impl<'gc> ThreadState<'gc> {
             }
         };
 
-        let backtrace = self.frames.iter().map(|f| f.backtrace_frame()).collect();
+        let err = vm_error(self, err);
 
         while self.frames.len() > bottom_frame {
             unwind_closure_frame(self, ctx);
         }
 
-        Err(VmError {
-            error: err,
-            backtrace,
-        }
-        .into())
+        Err(err)
     }
 
     fn call_callback(
