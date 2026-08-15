@@ -1715,21 +1715,11 @@ fn binary_priority(operator: ast::BinaryOp) -> (OperatorPriority, OperatorPriori
 mod tests {
     use super::*;
 
-    use crate::{lexer::Lexer, string_interner::StringInterner};
+    use crate::{lexer::Lexer, string_interner::StdStringInterner};
 
     fn parse(settings: ParseSettings, source: &str) -> Result<ast::Block<String>, ParseError> {
-        struct SimpleInterner;
-
-        impl StringInterner for SimpleInterner {
-            type String = String;
-
-            fn intern(&mut self, s: &str) -> Self::String {
-                s.to_owned()
-            }
-        }
-
         let mut tokens = Vec::new();
-        Lexer::tokenize(SimpleInterner, source, &mut tokens).unwrap();
+        Lexer::tokenize(StdStringInterner, source, &mut tokens).unwrap();
 
         settings.parse(tokens)
     }
