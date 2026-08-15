@@ -17,7 +17,7 @@ fn benchmark_script(c: &mut Criterion, name: &str, code: &str) {
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
             compiler::CompileSettings::strict(),
-            name,
+            vm::SharedStr::new(name),
             code,
         )
         .expect("compile error");
@@ -53,7 +53,7 @@ pub fn benchmark_scripts(c: &mut Criterion) {
         if let Some(ext) = path.extension() {
             if ext == "fml" {
                 let _ = writeln!(stdout(), "running {:?}", path);
-                benchmark_script(c, path.to_string_lossy().as_ref(), &code);
+                benchmark_script(c, &path.to_string_lossy(), &code);
             }
         } else {
             let _ = writeln!(stdout(), "skipping file {:?}", path);

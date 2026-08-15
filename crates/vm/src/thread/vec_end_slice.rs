@@ -1,6 +1,6 @@
 use std::{
     ops::{self, Bound, RangeBounds},
-    vec,
+    slice, vec,
 };
 
 /// A mutable reference to only the *end* of some `Vec<T>`.
@@ -57,12 +57,12 @@ impl<'a, T> VecEndSlice<'a, T> {
     }
 
     #[inline]
-    pub fn push_back(&mut self, value: T) {
+    pub fn push(&mut self, value: T) {
         self.inner.push(value);
     }
 
     #[inline]
-    pub fn pop_back(&mut self) -> Option<T> {
+    pub fn pop(&mut self) -> Option<T> {
         if self.inner.len() > self.bottom {
             Some(self.inner.pop().unwrap())
         } else {
@@ -143,17 +143,39 @@ impl<'a, T> VecEndSlice<'a, T> {
     }
 }
 
+impl<'a, T> AsRef<[T]> for VecEndSlice<'a, T> {
+    fn as_ref(&self) -> &[T] {
+        &self.inner[self.bottom..]
+    }
+}
+
+impl<'a, T> AsMut<[T]> for VecEndSlice<'a, T> {
+    fn as_mut(&mut self) -> &mut [T] {
+        &mut self.inner[self.bottom..]
+    }
+}
+
 impl<'a, T> ops::Deref for VecEndSlice<'a, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.inner[self.bottom..]
+        self.as_ref()
     }
 }
 
 impl<'a, T> ops::DerefMut for VecEndSlice<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner[self.bottom..]
+        self.as_mut()
+    }
+}
+
+impl<'a, 'b, T> IntoIterator for &'b VecEndSlice<'a, T> {
+    type Item = &'b T;
+    type IntoIter = slice::Iter<'b, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_ref().iter()
     }
 }
 

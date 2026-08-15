@@ -67,7 +67,7 @@ impl<'gc> vm::Singleton<'gc> for InstanceMethodsSingleton<'gc> {
                         "x" => Some(instance.position[0].into()),
                         "y" => Some(instance.position[1].into()),
                         "image_angle" => Some(instance.rotation.to_degrees().into()),
-                        _ => ctx.fetch(&instance.properties).get(key),
+                        _ => ctx.fetch(&instance.properties).try_find(key)?,
                     })
                 })?
             }
@@ -117,7 +117,9 @@ impl<'gc> vm::Singleton<'gc> for InstanceMethodsSingleton<'gc> {
                             Ok(())
                         }
                         _ => {
-                            ctx.fetch(&instance.properties).set(&ctx, key, value);
+                            ctx.fetch(&instance.properties)
+                                .try_borrow_mut(&ctx)?
+                                .set(key, value);
                             Ok(())
                         }
                     }
@@ -202,7 +204,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         magic
             .add_constant(
                 ctx,
-                ctx.intern(name),
+                ctx.intern_static(name),
                 vm::UserData::new_static(&ctx, event_type),
             )
             .unwrap();
@@ -216,7 +218,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         magic
             .add_constant(
                 ctx,
-                ctx.intern(name),
+                ctx.intern_static(name),
                 vm::UserData::new_static(&ctx, step_event),
             )
             .unwrap();
@@ -229,7 +231,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         magic
             .add_constant(
                 ctx,
-                ctx.intern(name),
+                ctx.intern_static(name),
                 vm::UserData::new_static(&ctx, other_event),
             )
             .unwrap();
@@ -294,7 +296,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("event_perform"), event_perform)
+        .add_constant(ctx, ctx.intern_static("event_perform"), event_perform)
         .unwrap();
 
     let event_inherited = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -333,7 +335,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         }
     });
     magic
-        .add_constant(ctx, ctx.intern("event_inherited"), event_inherited)
+        .add_constant(ctx, ctx.intern_static("event_inherited"), event_inherited)
         .unwrap();
 
     let instance_deactivate_layer = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -361,7 +363,7 @@ pub fn instance_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     magic
         .add_constant(
             ctx,
-            ctx.intern("instance_deactivate_layer"),
+            ctx.intern_static("instance_deactivate_layer"),
             instance_deactivate_layer,
         )
         .unwrap();

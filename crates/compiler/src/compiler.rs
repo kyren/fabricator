@@ -327,7 +327,7 @@ impl<'gc> Compiler<'gc> {
         config: impl Into<String>,
         imports: ImportItems<'gc>,
         compile_settings: CompileSettings,
-        chunk_name: impl Into<vm::SharedStr>,
+        chunk_name: vm::SharedStr,
         code: &str,
     ) -> Result<ChunkOutput<'gc>, CompileError> {
         let mut this = Self::new(ctx, config, imports);
@@ -364,7 +364,7 @@ impl<'gc> Compiler<'gc> {
     pub fn add_chunk(
         &mut self,
         settings: CompileSettings,
-        chunk_name: impl Into<vm::SharedStr>,
+        chunk_name: vm::SharedStr,
         code: &str,
     ) -> Result<(), CompileError> {
         self.preprocessor.add_chunk(

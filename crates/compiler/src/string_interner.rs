@@ -4,13 +4,9 @@ pub trait StringInterner {
     type String;
 
     fn intern(&mut self, s: &str) -> Self::String;
-}
 
-impl<S, F: FnMut(&str) -> S> StringInterner for F {
-    type String = S;
-
-    fn intern(&mut self, s: &str) -> Self::String {
-        (self)(s)
+    fn intern_static(&mut self, s: &'static str) -> Self::String {
+        self.intern(s)
     }
 }
 
@@ -27,6 +23,10 @@ impl<'gc> StringInterner for VmInterner<'gc> {
 
     fn intern(&mut self, s: &str) -> vm::String<'gc> {
         self.0.intern(s)
+    }
+
+    fn intern_static(&mut self, s: &'static str) -> Self::String {
+        self.0.intern_static(s)
     }
 }
 

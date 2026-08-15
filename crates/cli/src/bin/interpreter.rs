@@ -42,7 +42,7 @@ fn main() -> Result<ExitCode, Error> {
                     "",
                     ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
                     settings,
-                    path.to_string_lossy().into_owned(),
+                    vm::SharedStr::new(&path.to_string_lossy()),
                     &code,
                 )?;
                 let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
@@ -69,7 +69,7 @@ fn main() -> Result<ExitCode, Error> {
                     "",
                     ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
                     settings,
-                    path.to_string_lossy().into_owned(),
+                    vm::SharedStr::new(&path.to_string_lossy()),
                     &code,
                 )?;
 
@@ -143,7 +143,7 @@ fn main() -> Result<ExitCode, Error> {
                                 "",
                                 ctx.fetch(&imports),
                                 settings,
-                                "line-input",
+                                "line-input".into(),
                                 code,
                             )
                         };

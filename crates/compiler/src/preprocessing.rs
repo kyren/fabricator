@@ -32,7 +32,7 @@ impl<'gc> LexedChunk<'gc> {
     /// Lex the given chunk and produce the token stream and a `vm::Chunk` identifier.
     pub fn lex(
         ctx: vm::Context<'gc>,
-        chunk_name: impl Into<vm::SharedStr>,
+        chunk_name: vm::SharedStr,
         code: &str,
     ) -> Result<LexedChunk<'gc>, ChunkLexError> {
         let chunk = vm::Chunk::new_static(
@@ -123,7 +123,7 @@ impl<'gc> Preprocessor<'gc> {
         &mut self,
         parse_settings: ParseSettings,
         export_top_level_funcs: bool,
-        chunk_name: impl Into<vm::SharedStr>,
+        chunk_name: vm::SharedStr,
         code: &str,
     ) -> Result<(), ChunkLexError> {
         self.add_lexed_chunk(

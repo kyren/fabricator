@@ -29,7 +29,7 @@ fn test_vm_call_return_hooks() {
             "default",
             compiler::ImportItems::with_magic(&ctx, magic),
             compiler::CompileSettings::strict(),
-            "vm hook test",
+            "vm hook test".into(),
             r#"
                 function test1() {
                     test_callback();
@@ -114,7 +114,7 @@ fn test_vm_return_hook_on_error() {
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
             compiler::CompileSettings::strict(),
-            "vm hook test",
+            "vm hook test".into(),
             r#"
                 function test1() {
                     raise("hello");
@@ -199,7 +199,7 @@ fn test_vm_call_return_hook_count_with_error() {
             "default",
             compiler::ImportItems::with_magic(&ctx, magic),
             compiler::CompileSettings::strict(),
-            "vm hook test",
+            "vm hook test".into(),
             r#"
                 function test1() {
                     test_callback();
@@ -284,7 +284,7 @@ fn test_vm_step_hook() {
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
             compiler::CompileSettings::strict(),
-            "vm hook test",
+            "vm hook test".into(),
             r#"
                 function small_loop() {
                     for (let i = 0; i < 100; ++i) {}
