@@ -34,7 +34,7 @@ impl<S> LexedChunk<S> {
     /// Lex the given chunk and produce the token stream and a [`vm::Chunk`] identifier.
     pub fn lex(
         string_interner: impl StringInterner<String = S>,
-        chunk_name: impl Into<vm::SharedStr>,
+        chunk_name: vm::SharedStr,
         code: &str,
     ) -> Result<LexedChunk<S>, ChunkLexError> {
         let chunk = SourceChunk {
@@ -112,7 +112,7 @@ impl<S> Preprocessor<S> {
         string_interner: impl StringInterner<String = S>,
         parse_settings: ParseSettings,
         export_top_level_funcs: bool,
-        chunk_name: impl Into<vm::SharedStr>,
+        chunk_name: vm::SharedStr,
         code: &str,
     ) -> Result<(), ChunkLexError> {
         self.add_lexed_chunk(

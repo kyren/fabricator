@@ -28,7 +28,7 @@ pub fn sound_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("audio_sound_length"), audio_sound_length)
+        .add_constant(ctx, ctx.intern_static("audio_sound_length"), audio_sound_length)
         .unwrap();
 
     Ok(magic)

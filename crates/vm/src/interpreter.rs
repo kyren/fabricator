@@ -80,7 +80,12 @@ impl<'gc> Context<'gc> {
 
     #[inline]
     pub fn intern(self, s: &str) -> String<'gc> {
-        self.state.interned_strings.intern(&self, s, || s.into())
+        self.state.interned_strings.intern(&self, s)
+    }
+
+    #[inline]
+    pub fn intern_static(self, s: &'static str) -> String<'gc> {
+        self.state.interned_strings.intern_static(&self, s)
     }
 
     pub fn zst_cache(self) -> ZstCache<'gc, MAX_ZST_CACHE_ALIGN> {

@@ -252,6 +252,7 @@ pub fn string_trim_end<'gc>(
     (string, patterns): (vm::String<'gc>, Option<vm::Array<'gc>>),
 ) -> Result<vm::String<'gc>, vm::RuntimeError> {
     let res = if let Some(patterns) = patterns {
+        let patterns = patterns.try_borrow()?;
         let mut res = string.as_str();
         loop {
             let mut changed = false;
@@ -547,7 +548,8 @@ fn pretty_print_value<'gc>(
             }
             vm::Value::Object(object) => {
                 if let Some(exec) = &mut state.exec
-                    && let Some(to_string) = object.get(state.ctx.intern("toString"))
+                    && let Some(to_string) =
+                        object.try_find_field(state.ctx, "toString").ok().flatten()
                 {
                     let to_string: vm::Function = vm::FromValue::from_value(state.ctx, to_string)
                         .map_err(vm::VmError::from)?;
@@ -566,13 +568,19 @@ fn pretty_print_value<'gc>(
                 } else {
                     let obj_ptr = Gc::as_ptr(object.into_inner()) as *const ();
                     if !state.recursive_check.insert(obj_ptr) {
-                        return Ok(write!(state.writer, "<recursive object>")?);
+                        write!(state.writer, "<recursive object>")?;
+                        return Ok(());
                     }
 
                     let obj_base = state.object_stack.len();
-                    state
-                        .object_stack
-                        .extend(object.borrow().map.iter().map(|(&k, &v)| (k, v)));
+
+                    {
+                        let Ok(map) = object.try_borrow() else {
+                            write!(state.writer, "<borrowed object>")?;
+                            return Ok(());
+                        };
+                        state.object_stack.extend(map.iter());
+                    }
 
                     write!(state.writer, "{{")?;
                     for i in obj_base..state.object_stack.len() {
@@ -599,7 +607,14 @@ fn pretty_print_value<'gc>(
                 }
 
                 let arr_base = state.array_stack.len();
-                state.array_stack.extend(array.borrow().iter().copied());
+
+                {
+                    let Ok(array) = array.try_borrow() else {
+                        write!(state.writer, "<borrowed array>")?;
+                        return Ok(());
+                    };
+                    state.array_stack.extend(array.iter());
+                }
 
                 write!(state.writer, "[")?;
                 for i in arr_base..state.array_stack.len() {

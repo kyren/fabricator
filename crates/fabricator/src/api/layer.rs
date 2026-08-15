@@ -132,7 +132,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_create"), layer_create)
+        .add_constant(ctx, ctx.intern_static("layer_create"), layer_create)
         .unwrap();
 
     let layer_exists = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -153,7 +153,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_exists"), layer_exists)
+        .add_constant(ctx, ctx.intern_static("layer_exists"), layer_exists)
         .unwrap();
 
     let layer_get_id = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -173,7 +173,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_get_id"), layer_get_id)
+        .add_constant(ctx, ctx.intern_static("layer_get_id"), layer_get_id)
         .unwrap();
 
     let layer_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -190,7 +190,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_get_name"), layer_get_name)
+        .add_constant(ctx, ctx.intern_static("layer_get_name"), layer_get_name)
         .unwrap();
 
     let layer_get_depth = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -203,7 +203,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_get_depth"), layer_get_depth)
+        .add_constant(ctx, ctx.intern_static("layer_get_depth"), layer_get_depth)
         .unwrap();
 
     let layer_depth = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -215,7 +215,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_depth"), layer_depth)
+        .add_constant(ctx, ctx.intern_static("layer_depth"), layer_depth)
         .unwrap();
 
     let layer_set_visible = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -227,7 +227,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_set_visible"), layer_set_visible)
+        .add_constant(ctx, ctx.intern_static("layer_set_visible"), layer_set_visible)
         .unwrap();
 
     let layer_get_all = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -243,7 +243,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("layer_get_all"), layer_get_all)
+        .add_constant(ctx, ctx.intern_static("layer_get_all"), layer_get_all)
         .unwrap();
 
     let layer_destroy_instances = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -298,7 +298,7 @@ pub fn layers_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     magic
         .add_constant(
             ctx,
-            ctx.intern("layer_destroy_instances"),
+            ctx.intern_static("layer_destroy_instances"),
             layer_destroy_instances,
         )
         .unwrap();

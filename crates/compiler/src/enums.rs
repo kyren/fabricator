@@ -614,20 +614,10 @@ impl<S: Clone + Eq + Hash> EnumSet<S> {
 mod tests {
     pub use super::*;
 
-    use crate::{lexer::Lexer, parser::ParseSettings, string_interner::StringInterner};
+    use crate::{lexer::Lexer, parser::ParseSettings, string_interner::StdStringInterner};
 
     #[test]
     fn test_synthetic() {
-        struct SimpleInterner;
-
-        impl StringInterner for SimpleInterner {
-            type String = String;
-
-            fn intern(&mut self, s: &str) -> Self::String {
-                s.to_owned()
-            }
-        }
-
         const SOURCE: &str = r#"
             var value = Hello.B;
         "#;
@@ -651,7 +641,7 @@ mod tests {
         .collect();
 
         let mut tokens = Vec::new();
-        Lexer::tokenize(SimpleInterner, SOURCE, &mut tokens).unwrap();
+        Lexer::tokenize(StdStringInterner, SOURCE, &mut tokens).unwrap();
 
         let mut block = ParseSettings::strict().parse(tokens).unwrap();
 

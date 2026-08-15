@@ -57,7 +57,7 @@ impl FfiNumber {
 }
 
 impl<'gc> vm::FromValue<'gc> for FfiNumber {
-    fn from_value(ctx: vm::Context<'gc>, value: vm::Value<'gc>) -> Result<Self, vm::TypeError> {
+    fn from_value(ctx: vm::Context<'gc>, value: vm::Value<'gc>) -> Result<Self, vm::RuntimeError> {
         Ok(FfiNumber(value.coerce_float(ctx).ok_or(
             vm::TypeError::new("value coercible to float", value.type_name()),
         )?))
@@ -82,7 +82,7 @@ impl FfiPointer {
 }
 
 impl<'gc> vm::FromValue<'gc> for FfiPointer {
-    fn from_value(_ctx: vm::Context<'gc>, value: vm::Value<'gc>) -> Result<Self, vm::TypeError> {
+    fn from_value(_ctx: vm::Context<'gc>, value: vm::Value<'gc>) -> Result<Self, vm::RuntimeError> {
         if let vm::Value::String(s) = value {
             // Create a `CString` buffer up until the first NUL in the given string. If there isn't
             // an embedded NUL, this will copy the entire string.
@@ -99,14 +99,14 @@ impl<'gc> vm::FromValue<'gc> for FfiPointer {
             }
         }
 
-        Err(vm::TypeError::new("pointer type", value.type_name()))
+        Err(vm::TypeError::new("pointer type", value.type_name()).into())
     }
 }
 
 impl<'gc> vm::IntoValue<'gc> for FfiPointer {
     fn into_value(self, ctx: vm::Context<'gc>) -> vm::Value<'gc> {
         let c_str = unsafe { CStr::from_ptr(self.0 as *const _) };
-        ctx.intern(c_str.to_string_lossy().as_ref()).into()
+        ctx.intern(&c_str.to_string_lossy()).into()
     }
 }
 

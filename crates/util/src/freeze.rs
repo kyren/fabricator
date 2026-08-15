@@ -214,8 +214,8 @@ impl<F: for<'f> Freeze<'f>> Drop for FreezeGuard<'_, F> {
         if let Ok(mut cell) = self.cell.try_borrow_mut() {
             *cell = self.prev.take();
         } else {
-            // If the value is locked, then there might be a live reference to it somewhere. We can
-            // no longer guarantee our invariants and are forced to abort.
+            // If the value is borrowed, then there might be a live reference to it somewhere. We
+            // can no longer guarantee our invariants and are forced to abort.
             eprintln!("freeze lock held during guard drop, aborting!");
             std::process::abort()
         }

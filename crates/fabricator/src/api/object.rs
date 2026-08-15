@@ -167,6 +167,7 @@ impl<'gc> ObjectUserData<'gc> {
             fn create(ctx: vm::Context<'gc>) -> Self {
                 let instance_iter = vm::Callback::from_fn(ctx, |ctx, mut exec| {
                     let (array, mut idx): (vm::Array, usize) = exec.stack().consume(ctx)?;
+                    let array = array.try_borrow()?;
                     let next_instance =
                         State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
                             while idx < array.len() {
@@ -299,6 +300,7 @@ pub fn all<'gc>(ctx: vm::Context<'gc>) -> vm::UserData<'gc> {
                 let (array, mut idx): (vm::Array, usize) = exec.stack().consume(ctx)?;
                 let next_instance =
                     State::ctx_with(ctx, |state| -> Result<_, vm::RuntimeError> {
+                        let array = array.try_borrow()?;
                         while idx < array.len() {
                             let ud: vm::UserData =
                                 vm::FromValue::from_value(ctx, array.get(idx).unwrap())?;
@@ -341,11 +343,11 @@ pub fn object_api<'gc>(
     let mut magic = vm::MagicSet::new();
 
     magic
-        .add_constant(ctx, ctx.intern("noone"), no_one(ctx))
+        .add_constant(ctx, ctx.intern_static("noone"), no_one(ctx))
         .unwrap();
 
     magic
-        .add_constant(ctx, ctx.intern("all"), all(ctx))
+        .add_constant(ctx, ctx.intern_static("all"), all(ctx))
         .unwrap();
 
     for object in config.objects.values() {
@@ -362,7 +364,7 @@ pub fn object_api<'gc>(
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("object_get_name"), object_get_name)
+        .add_constant(ctx, ctx.intern_static("object_get_name"), object_get_name)
         .unwrap();
 
     let instance_create_depth = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -376,114 +378,29 @@ pub fn object_api<'gc>(
 
         let object = ObjectUserData::downcast(object)?;
 
-        let (instance_id, instance_ud, create_script) = State::ctx_with_mut(ctx, |state| {
-            let properties = vm::Object::new(&ctx);
-            if let Some(set_properties) = set_properties {
-                // We only copy properties from the topmost object, the documentation of GMS2 is
-                // vague on this point.
-                //
-                // TODO: Actually check the behavior against GMS2
-                let set_properties = set_properties.borrow();
-                for (&key, &value) in &set_properties.map {
-                    properties.set(&ctx, key, value);
-                }
-            }
-
-            let layer_id = state.layers.insert_with_id(|id| {
-                let layer_ud = LayerIdUserData::new(ctx, id, None);
-                Layer {
-                    this: ctx.stash(layer_ud),
-                    depth,
-                    visible: true,
-                    tile_map: None,
-                }
-            });
-
-            let event_closures = state.event_closures(object.id);
-
-            let instance_id = state.instances.insert_with_id(|instance_id| Instance {
-                this: ctx.stash(InstanceUserData::new(ctx, instance_id)),
-                object: object.id,
-                active: true,
-                dead: false,
-                position: Vec2::new(x, y),
-                rotation: 0.0,
-                layer: layer_id,
-                properties: ctx.stash(properties),
-                event_closures,
-                animation_time: 0.0,
-            });
-
-            assert!(
-                state
-                    .instances_for_object
-                    .get_or_insert_default(object.id)
-                    .insert(instance_id)
-            );
-            assert!(
-                state
-                    .instances_for_layer
-                    .get_or_insert_default(layer_id)
-                    .insert(instance_id)
-            );
-
-            (
-                instance_id,
-                ctx.fetch(&state.instances[instance_id].this),
-                state.instances[instance_id]
-                    .event_closures
-                    .get(&ObjectEvent::Create)
-                    .cloned(),
-            )
-        })?;
-
-        if let Some(create_script) = create_script {
-            EventState::ctx_cell(ctx).freeze(
-                &EventState {
-                    instance_id,
-                    object_id: object.id,
-                    current_event: ObjectEvent::Create,
-                },
-                || {
-                    exec.with_this(instance_ud)
-                        .call(ctx, ctx.fetch(&create_script))
-                },
-            )?;
-        }
-
-        exec.stack().replace(ctx, instance_ud);
-
-        Ok(())
-    });
-    magic.add_constant(
-        ctx,
-        ctx.intern("instance_create_depth"),
-        instance_create_depth,
-    )?;
-
-    let instance_create_layer = vm::Callback::from_fn(ctx, |ctx, mut exec| {
-        let (x, y, layer_id_or_name, object, set_properties): (
-            f64,
-            f64,
-            vm::Value,
-            vm::UserData,
-            Option<vm::Object>,
-        ) = exec.stack().consume(ctx)?;
-
-        let object = ObjectUserData::downcast(object)?;
-
         let (instance_id, instance_ud, create_script) =
             State::ctx_with_mut(ctx, |state| -> Result<_, vm::RuntimeError> {
-                let layer_id = find_layer(state, layer_id_or_name)?;
-
-                let properties = vm::Object::new(&ctx);
+                let mut properties = vm::ObjectMap::new();
                 if let Some(set_properties) = set_properties {
-                    // We only copy properties from the topmost object, see above.
-                    let set_properties = set_properties.borrow();
-                    for (&key, &value) in &set_properties.map {
-                        properties.set(&ctx, key, value);
+                    // We only copy properties from the topmost object, the documentation of GMS2 is
+                    // vague on this point.
+                    //
+                    // TODO: Actually check the behavior against GMS2
+                    let set_properties = set_properties.try_borrow()?;
+                    for (key, value) in &*set_properties {
+                        properties.set(key, value);
                     }
                 }
+
+                let layer_id = state.layers.insert_with_id(|id| {
+                    let layer_ud = LayerIdUserData::new(ctx, id, None);
+                    Layer {
+                        this: ctx.stash(layer_ud),
+                        depth,
+                        visible: true,
+                        tile_map: None,
+                    }
+                });
 
                 let event_closures = state.event_closures(object.id);
 
@@ -495,7 +412,7 @@ pub fn object_api<'gc>(
                     position: Vec2::new(x, y),
                     rotation: 0.0,
                     layer: layer_id,
-                    properties: ctx.stash(properties),
+                    properties: ctx.stash(vm::Object::with_parts(&ctx, properties, None)),
                     event_closures,
                     animation_time: 0.0,
                 });
@@ -543,7 +460,93 @@ pub fn object_api<'gc>(
     });
     magic.add_constant(
         ctx,
-        ctx.intern("instance_create_layer"),
+        ctx.intern_static("instance_create_depth"),
+        instance_create_depth,
+    )?;
+
+    let instance_create_layer = vm::Callback::from_fn(ctx, |ctx, mut exec| {
+        let (x, y, layer_id_or_name, object, set_properties): (
+            f64,
+            f64,
+            vm::Value,
+            vm::UserData,
+            Option<vm::Object>,
+        ) = exec.stack().consume(ctx)?;
+
+        let object = ObjectUserData::downcast(object)?;
+
+        let (instance_id, instance_ud, create_script) =
+            State::ctx_with_mut(ctx, |state| -> Result<_, vm::RuntimeError> {
+                let layer_id = find_layer(state, layer_id_or_name)?;
+
+                let mut properties = vm::ObjectMap::new();
+                if let Some(set_properties) = set_properties {
+                    // We only copy properties from the topmost object, see above.
+                    let set_properties = set_properties.try_borrow()?;
+                    for (key, value) in &*set_properties {
+                        properties.set(key, value);
+                    }
+                }
+
+                let event_closures = state.event_closures(object.id);
+
+                let instance_id = state.instances.insert_with_id(|instance_id| Instance {
+                    this: ctx.stash(InstanceUserData::new(ctx, instance_id)),
+                    object: object.id,
+                    active: true,
+                    dead: false,
+                    position: Vec2::new(x, y),
+                    rotation: 0.0,
+                    layer: layer_id,
+                    properties: ctx.stash(vm::Object::with_parts(&ctx, properties, None)),
+                    event_closures,
+                    animation_time: 0.0,
+                });
+
+                assert!(
+                    state
+                        .instances_for_object
+                        .get_or_insert_default(object.id)
+                        .insert(instance_id)
+                );
+                assert!(
+                    state
+                        .instances_for_layer
+                        .get_or_insert_default(layer_id)
+                        .insert(instance_id)
+                );
+
+                Ok((
+                    instance_id,
+                    ctx.fetch(&state.instances[instance_id].this),
+                    state.instances[instance_id]
+                        .event_closures
+                        .get(&ObjectEvent::Create)
+                        .cloned(),
+                ))
+            })??;
+
+        if let Some(create_script) = create_script {
+            EventState::ctx_cell(ctx).freeze(
+                &EventState {
+                    instance_id,
+                    object_id: object.id,
+                    current_event: ObjectEvent::Create,
+                },
+                || {
+                    exec.with_this(instance_ud)
+                        .call(ctx, ctx.fetch(&create_script))
+                },
+            )?;
+        }
+
+        exec.stack().replace(ctx, instance_ud);
+
+        Ok(())
+    });
+    magic.add_constant(
+        ctx,
+        ctx.intern_static("instance_create_layer"),
         instance_create_layer,
     )?;
 
@@ -573,7 +576,7 @@ pub fn object_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("instance_exists"), instance_exists)
+        .add_constant(ctx, ctx.intern_static("instance_exists"), instance_exists)
         .unwrap();
 
     let instance_deactivate_object = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -603,7 +606,7 @@ pub fn object_api<'gc>(
     magic
         .add_constant(
             ctx,
-            ctx.intern("instance_deactivate_object"),
+            ctx.intern_static("instance_deactivate_object"),
             instance_deactivate_object,
         )
         .unwrap();
@@ -630,7 +633,7 @@ pub fn object_api<'gc>(
     magic
         .add_constant(
             ctx,
-            ctx.intern("instance_activate_region"),
+            ctx.intern_static("instance_activate_region"),
             instance_activate_region,
         )
         .unwrap();
@@ -704,7 +707,7 @@ pub fn object_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("instance_destroy"), instance_destroy)
+        .add_constant(ctx, ctx.intern_static("instance_destroy"), instance_destroy)
         .unwrap();
 
     Ok(magic)

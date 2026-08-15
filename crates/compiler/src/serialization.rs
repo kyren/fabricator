@@ -398,7 +398,7 @@ impl<S> SerializePrototypeOutput<S> {
                 .map(|(source_chunk, proto)| {
                     (
                         SourceChunk {
-                            name: source_chunk.name.into(),
+                            name: vm::SharedStr::new(&source_chunk.name),
                             line_numbers: LineNumbers::from_line_breaks(source_chunk.line_breaks),
                         },
                         proto.into_prototype(),
