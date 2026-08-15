@@ -12,34 +12,54 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     let mut magic = vm::MagicSet::new();
 
     magic
-        .add_constant(ctx, ctx.intern("os_type"), ctx.intern(env::consts::OS))
-        .unwrap();
-    magic
-        .add_constant(ctx, ctx.intern("os_windows"), ctx.intern("windows"))
-        .unwrap();
-    magic
-        .add_constant(ctx, ctx.intern("os_macosx"), ctx.intern("macos"))
-        .unwrap();
-    magic
-        .add_constant(ctx, ctx.intern("os_linux"), ctx.intern("linux"))
-        .unwrap();
-    magic
-        .add_constant(ctx, ctx.intern("os_switch"), ctx.intern("switch"))
-        .unwrap();
-    magic
-        .add_constant(ctx, ctx.intern("os_ps4"), ctx.intern("ps4"))
-        .unwrap();
-    magic
-        .add_constant(ctx, ctx.intern("os_ps5"), ctx.intern("ps5"))
-        .unwrap();
-    magic
-        .add_constant(ctx, ctx.intern("os_gdk"), ctx.intern("gdk"))
+        .add_constant(
+            ctx,
+            ctx.intern_static("os_type"),
+            ctx.intern_static(env::consts::OS),
+        )
         .unwrap();
     magic
         .add_constant(
             ctx,
-            ctx.intern("os_xboxseriesxs"),
-            ctx.intern("xboxseriesx"),
+            ctx.intern_static("os_windows"),
+            ctx.intern_static("windows"),
+        )
+        .unwrap();
+    magic
+        .add_constant(
+            ctx,
+            ctx.intern_static("os_macosx"),
+            ctx.intern_static("macos"),
+        )
+        .unwrap();
+    magic
+        .add_constant(
+            ctx,
+            ctx.intern_static("os_linux"),
+            ctx.intern_static("linux"),
+        )
+        .unwrap();
+    magic
+        .add_constant(
+            ctx,
+            ctx.intern_static("os_switch"),
+            ctx.intern_static("switch"),
+        )
+        .unwrap();
+    magic
+        .add_constant(ctx, ctx.intern_static("os_ps4"), ctx.intern_static("ps4"))
+        .unwrap();
+    magic
+        .add_constant(ctx, ctx.intern_static("os_ps5"), ctx.intern_static("ps5"))
+        .unwrap();
+    magic
+        .add_constant(ctx, ctx.intern_static("os_gdk"), ctx.intern_static("gdk"))
+        .unwrap();
+    magic
+        .add_constant(
+            ctx,
+            ctx.intern_static("os_xboxseriesxs"),
+            ctx.intern_static("xboxseriesx"),
         )
         .unwrap();
 
@@ -47,7 +67,7 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         let var_name: vm::String = exec.stack().consume(ctx)?;
         let env_var = match env::var(var_name.as_str()) {
             Ok(val) => ctx.intern(&val),
-            Err(_) => ctx.intern(""),
+            Err(_) => ctx.intern_static(""),
         };
         exec.stack().replace(ctx, env_var);
         Ok(())
@@ -55,7 +75,7 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     magic
         .add_constant(
             ctx,
-            ctx.intern("environment_get_variable"),
+            ctx.intern_static("environment_get_variable"),
             environment_get_variable,
         )
         .unwrap();
@@ -69,7 +89,7 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("file_exists"), file_exists)
+        .add_constant(ctx, ctx.intern_static("file_exists"), file_exists)
         .unwrap();
 
     let get_timer = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -80,12 +100,12 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("get_timer"), get_timer)
+        .add_constant(ctx, ctx.intern_static("get_timer"), get_timer)
         .unwrap();
 
     magic
         .add(
-            ctx.intern("current_time"),
+            ctx.intern_static("current_time"),
             create_magic_ro(ctx, |ctx| {
                 State::ctx_with(ctx, |state| {
                     Ok((state.start_instant.elapsed().as_millis() as i64).into())
@@ -99,7 +119,7 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Err(vm::RuntimeError::msg(arg.as_str().to_owned()).into())
     });
     magic
-        .add_constant(ctx, ctx.intern("show_error"), show_error)
+        .add_constant(ctx, ctx.intern_static("show_error"), show_error)
         .unwrap();
 
     let buffer_load = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -116,7 +136,7 @@ pub fn os_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("buffer_load"), buffer_load)
+        .add_constant(ctx, ctx.intern_static("buffer_load"), buffer_load)
         .unwrap();
 
     magic

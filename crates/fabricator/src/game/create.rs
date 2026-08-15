@@ -575,7 +575,7 @@ fn load_scripts(
                     ScriptMode::Compat => compiler::CompileSettings::compat(),
                     ScriptMode::Modern => compiler::CompileSettings::strict(),
                 },
-                script.path.to_string_lossy().as_ref(),
+                vm::SharedStr::new(&script.path.to_string_lossy()),
                 &code_buf,
             )?;
         }
@@ -621,7 +621,7 @@ fn load_scripts(
                         ScriptMode::Modern => compiler::CompileSettings::strict(),
                     }
                     .export_top_level_functions(false),
-                    script.path.to_string_lossy().as_ref(),
+                    vm::SharedStr::new(&script.path.to_string_lossy()),
                     &code_buf,
                 )?;
                 object_events

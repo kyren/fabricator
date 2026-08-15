@@ -216,7 +216,7 @@ where
     pub fn add_chunk(
         &mut self,
         settings: CompileSettings,
-        chunk_name: impl Into<vm::SharedStr>,
+        chunk_name: vm::SharedStr,
         code: &str,
     ) -> Result<(), CompileError> {
         self.preprocessor.add_chunk(

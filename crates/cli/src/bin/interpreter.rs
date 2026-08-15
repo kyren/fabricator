@@ -43,7 +43,7 @@ fn main() -> Result<ExitCode, Error> {
                     "",
                     ChunkImports::with_magic(&ctx, ctx.testing_stdlib()),
                     settings,
-                    path.to_string_lossy().as_ref(),
+                    vm::SharedStr::new(&path.to_string_lossy()),
                     &code,
                 )?;
                 let closure = vm::Closure::new(&ctx, chunk_prototype, None).unwrap();
@@ -68,7 +68,7 @@ fn main() -> Result<ExitCode, Error> {
                 let testing_stdlib = ctx.testing_stdlib();
 
                 let mut compiler = Compiler::new(VmInterner::new(ctx));
-                compiler.add_chunk(settings, path.to_string_lossy().as_ref(), &code)?;
+                compiler.add_chunk(settings, vm::SharedStr::new(&path.to_string_lossy()), &code)?;
                 let output = compiler.compile(
                     ctx.intern(""),
                     &Default::default(),
@@ -169,7 +169,7 @@ fn main() -> Result<ExitCode, Error> {
                                 "",
                                 ctx.fetch(&imports),
                                 settings,
-                                "line-input",
+                                "line-input".into(),
                                 code,
                             )
                         };

@@ -70,7 +70,7 @@ pub fn compile_chunk<'gc>(
     config: &str,
     imports: ChunkImports<'gc>,
     compile_settings: CompileSettings,
-    chunk_name: &str,
+    chunk_name: vm::SharedStr,
     code: &str,
 ) -> Result<(Gc<'gc, vm::Prototype<'gc>>, ChunkImports<'gc>), CompileError> {
     let mut compiler = Compiler::new(VmInterner::new(ctx));

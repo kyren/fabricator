@@ -28,7 +28,7 @@ pub fn room_api<'gc>(
                 .into()
         })?)
     });
-    magic.add(ctx.intern("room"), room_magic)?;
+    magic.add(ctx.intern_static("room"), room_magic)?;
 
     let room_goto = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let room: vm::Value = exec.stack().consume(ctx)?;
@@ -53,7 +53,7 @@ pub fn room_api<'gc>(
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("room_goto"), room_goto)
+        .add_constant(ctx, ctx.intern_static("room_goto"), room_goto)
         .unwrap();
 
     let room_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -66,7 +66,7 @@ pub fn room_api<'gc>(
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("room_get_name"), room_get_name)
+        .add_constant(ctx, ctx.intern_static("room_get_name"), room_get_name)
         .unwrap();
 
     let room_width = create_magic_ro(ctx, |ctx| {
@@ -74,24 +74,24 @@ pub fn room_api<'gc>(
             vm::Value::Integer(state.config.rooms[state.current_room.unwrap()].size[0] as i64)
         })?)
     });
-    magic.add(ctx.intern("room_width"), room_width)?;
+    magic.add(ctx.intern_static("room_width"), room_width)?;
 
     let room_height = create_magic_ro(ctx, |ctx| {
         Ok(State::ctx_with(ctx, |state| {
             vm::Value::Integer(state.config.rooms[state.current_room.unwrap()].size[1] as i64)
         })?)
     });
-    magic.add(ctx.intern("room_height"), room_height)?;
+    magic.add(ctx.intern_static("room_height"), room_height)?;
 
     magic.add_constant(
         ctx,
-        ctx.intern("room_first"),
+        ctx.intern_static("room_first"),
         ctx.fetch(&config.rooms[config.first_room].userdata),
     )?;
 
     magic.add_constant(
         ctx,
-        ctx.intern("room_last"),
+        ctx.intern_static("room_last"),
         ctx.fetch(&config.rooms[config.last_room].userdata),
     )?;
 
