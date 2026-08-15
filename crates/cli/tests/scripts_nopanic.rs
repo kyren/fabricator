@@ -78,7 +78,7 @@ fn run_code(
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
             compile_settings,
-            name,
+            vm::SharedStr::new(name),
             code,
         )?;
         let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
@@ -102,7 +102,7 @@ fn try_scripts(dir: &str) {
             if ext.eq_ignore_ascii_case("fml") || ext.eq_ignore_ascii_case("gml") {
                 let _ = writeln!(stdout(), "trying {:?}", path);
                 let _ = run_code(
-                    path.to_string_lossy().as_ref(),
+                    &path.to_string_lossy(),
                     &code,
                     if ext.eq_ignore_ascii_case("gml") {
                         compiler::CompileSettings::compat()

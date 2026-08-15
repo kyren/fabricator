@@ -22,12 +22,12 @@ pub fn array_create_ext<'gc>(
     mut exec: vm::Execution<'gc, '_>,
 ) -> Result<(), vm::VmError<'gc>> {
     let (length, create): (usize, vm::Function) = exec.stack().consume(ctx)?;
-    let array = vm::Array::with_capacity(&ctx, length);
+    let mut array = vm::ArrayVec::with_capacity(length);
 
     for i in 0..length {
         exec.stack().replace(ctx, i as isize);
         exec.call(ctx, create)?;
-        array.set(&ctx, i, exec.stack().get(0));
+        array.set(i, exec.stack().get(0));
     }
 
     exec.stack().replace(ctx, array);
@@ -37,8 +37,8 @@ pub fn array_create_ext<'gc>(
 pub fn array_length<'gc>(
     _ctx: vm::Context<'gc>,
     array: vm::Array<'gc>,
-) -> Result<isize, Infallible> {
-    Ok(array.len() as isize)
+) -> Result<isize, vm::array::ArrayBorrowError> {
+    Ok(array.try_borrow()?.len() as isize)
 }
 
 /// Takes all provided arguments and converts them into a single array.
@@ -70,7 +70,7 @@ pub fn array_pack<'gc>(
 pub fn array_unpack<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::TypeError> {
+) -> Result<(), vm::RuntimeError> {
     let mut stack = exec.stack();
     let arr: vm::Array = stack.consume(ctx)?;
     stack.extend(arr.borrow().iter());
@@ -81,8 +81,9 @@ pub fn array_delete<'gc>(
     ctx: vm::Context<'gc>,
     (array, index, count): (vm::Array<'gc>, isize, isize),
 ) -> Result<(), vm::RuntimeError> {
+    let mut array = array.try_borrow_mut(&ctx)?;
     let (range, _) = resolve_array_range(array.len(), Some(index), Some(count))?;
-    array.borrow_mut(&ctx).drain(range);
+    array.drain(range);
     Ok(())
 }
 
@@ -90,8 +91,8 @@ pub fn array_get_index<'gc>(
     _ctx: vm::Context<'gc>,
     (array, value, offset, length): (vm::Array<'gc>, vm::Value<'gc>, Option<isize>, Option<isize>),
 ) -> Result<isize, vm::RuntimeError> {
+    let array = array.try_borrow()?;
     let (range, is_reverse) = resolve_array_range(array.len(), offset, length)?;
-    let array = array.borrow();
     let mut range_iter = array[range.clone()].iter();
 
     let idx = if is_reverse {
@@ -112,10 +113,11 @@ pub fn array_get_index<'gc>(
 pub fn array_push<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
-) -> Result<(), vm::TypeError> {
+) -> Result<(), vm::RuntimeError> {
     let array: vm::Array = exec.stack().from_index(ctx, 0)?;
+    let mut array = array.try_borrow_mut(&ctx)?;
     for &value in &exec.stack()[1..] {
-        array.push(&ctx, value)
+        array.push(value)
     }
     exec.stack().clear();
     Ok(())
@@ -124,8 +126,8 @@ pub fn array_push<'gc>(
 pub fn array_pop<'gc>(
     ctx: vm::Context<'gc>,
     array: vm::Array<'gc>,
-) -> Result<vm::Value<'gc>, Infallible> {
-    Ok(array.pop(&ctx))
+) -> Result<vm::Value<'gc>, vm::array::ArrayBorrowMutError> {
+    Ok(array.try_borrow_mut(&ctx)?.pop().unwrap_or_default())
 }
 
 pub fn array_sort<'gc>(
@@ -143,11 +145,12 @@ pub fn array_sort<'gc>(
 }
 
 pub fn array_contains<'gc>(
-    ctx: vm::Context<'gc>,
+    _ctx: vm::Context<'gc>,
     (array, value, index, count): (vm::Array<'gc>, vm::Value<'gc>, Option<isize>, Option<isize>),
 ) -> Result<bool, vm::RuntimeError> {
+    let array = array.try_borrow()?;
     let (range, _) = resolve_array_range(array.len(), index, count)?;
-    Ok(array.borrow_mut(&ctx)[range].contains(&value))
+    Ok(array[range].contains(&value))
 }
 
 pub fn array_map<'gc>(
@@ -156,12 +159,13 @@ pub fn array_map<'gc>(
 ) -> Result<(), vm::VmError<'gc>> {
     let (input, function, index, count): (vm::Array, vm::Function, Option<isize>, Option<isize>) =
         exec.stack().consume(ctx)?;
+    let input = input.try_borrow()?;
     let (range, _) = resolve_array_range(input.len(), index, count)?;
-    let output = vm::Array::with_capacity(&ctx, range.len());
+    let mut output = vm::ArrayVec::with_capacity(range.len());
     for i in range {
         exec.stack().replace(ctx, (input.get(i), i as isize));
         exec.call(ctx, function)?;
-        output.set(&ctx, i, exec.stack().get(0));
+        output.set(i, exec.stack().get(0));
     }
     exec.stack().replace(ctx, output);
     Ok(())
@@ -177,16 +181,18 @@ pub fn array_copy<'gc>(
         isize,
     ),
 ) -> Result<(), vm::RuntimeError> {
+    let src = src.try_borrow()?;
+    let mut dest = dest.try_borrow_mut(&ctx)?;
     let dest_index = resolve_array_index(dest.len(), Some(dest_index))?;
     let (src_range, is_reverse) = resolve_array_range(src.len(), Some(src_index), Some(length))?;
 
     if is_reverse {
         for (i, ind) in src_range.rev().enumerate() {
-            dest.set(&ctx, dest_index + i, src.get(ind).unwrap());
+            dest.set(dest_index + i, src.get(ind).unwrap());
         }
     } else {
         for (i, ind) in src_range.enumerate() {
-            dest.set(&ctx, dest_index + i, src.get(ind).unwrap());
+            dest.set(dest_index + i, src.get(ind).unwrap());
         }
     }
     Ok(())
@@ -210,13 +216,12 @@ pub fn array_resize<'gc>(
 pub fn array_insert<'gc>(
     ctx: vm::Context<'gc>,
     (array, pos, value): (vm::Array<'gc>, usize, vm::Value<'gc>),
-) -> Result<(), Infallible> {
-    let mut a = array.borrow_mut(&ctx);
+) -> Result<(), vm::array::ArrayBorrowMutError> {
+    let mut a = array.try_borrow_mut(&ctx)?;
     if pos > a.len() {
         a.resize(pos + 1, vm::Value::Undefined);
     }
     a.insert(pos, value);
-
     Ok(())
 }
 
@@ -232,6 +237,7 @@ pub fn array_any<'gc>(
 ) -> Result<(), vm::VmError<'gc>> {
     let (input, function): (vm::Array<'gc>, vm::Function<'gc>) = exec.stack().consume(ctx)?;
 
+    let input = input.try_borrow()?;
     let len = input.len();
     let mut o = false;
     for i in 0..len {

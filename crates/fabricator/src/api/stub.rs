@@ -8,11 +8,11 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     fn create_stub_constant<'gc>(
         ctx: vm::Context<'gc>,
         magic: &mut vm::MagicSet<'gc>,
-        name: &str,
+        name: &'static str,
         value: impl Into<vm::Value<'gc>>,
     ) {
         magic
-            .add_constant(ctx, ctx.intern(name), value.into())
+            .add_constant(ctx, ctx.intern_static(name), value.into())
             .unwrap();
     }
 
@@ -26,11 +26,11 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
             vm::Callback::from_fn_with_root(ctx, returns, move |returns, _ctx, mut exec| {
                 log::debug!("call of stubbed out callback {name}");
                 exec.stack().clear();
-                exec.stack().extend(returns);
+                exec.stack().extend(returns.iter().copied());
                 Ok(())
             });
         magic
-            .add_constant(ctx, ctx.intern(name), stub_callback)
+            .add_constant(ctx, ctx.intern_static(name), stub_callback)
             .unwrap();
     }
 
@@ -48,7 +48,7 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         ctx,
         &mut magic,
         "game_project_name",
-        ctx.intern("fabricator-project"),
+        ctx.intern_static("fabricator-project"),
     );
     create_stub_callback(ctx, &mut magic, "gc_collect", []);
     create_stub_callback(ctx, &mut magic, "gc_enable", []);
@@ -58,7 +58,12 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     create_stub_callback(ctx, &mut magic, "file_rename", [true.into()]);
     create_stub_callback(ctx, &mut magic, "directory_exists", [true.into()]);
     create_stub_callback(ctx, &mut magic, "directory_destroy", [true.into()]);
-    create_stub_callback(ctx, &mut magic, "file_find_first", [ctx.intern("").into()]);
+    create_stub_callback(
+        ctx,
+        &mut magic,
+        "file_find_first",
+        [ctx.intern_static("").into()],
+    );
     create_stub_callback(ctx, &mut magic, "file_find_close", []);
 
     create_stub_callback(ctx, &mut magic, "application_surface_enable", []);
@@ -213,14 +218,14 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     create_stub_callback(ctx, &mut magic, "draw_set_font", [unit_userdata]);
 
     let font_get_info = vm::Callback::from_fn(ctx, |ctx, mut exec| {
-        let data = vm::Object::new(&ctx);
+        let mut data = vm::ObjectMap::new();
         let glyphs = vm::Object::new(&ctx);
-        data.set(&ctx, ctx.intern("glyphs"), glyphs);
+        data.set_field(ctx, "glyphs", glyphs);
         exec.stack().replace(ctx, data);
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("font_get_info"), font_get_info)
+        .add_constant(ctx, ctx.intern_static("font_get_info"), font_get_info)
         .unwrap();
 
     let string_width = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -230,7 +235,7 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("string_width"), string_width)
+        .add_constant(ctx, ctx.intern_static("string_width"), string_width)
         .unwrap();
 
     let string_width_ext = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -239,7 +244,7 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("string_width_ext"), string_width_ext)
+        .add_constant(ctx, ctx.intern_static("string_width_ext"), string_width_ext)
         .unwrap();
 
     let string_height_ext = vm::Callback::from_fn(ctx, |ctx, mut exec| {
@@ -250,7 +255,11 @@ pub fn stub_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         Ok(())
     });
     magic
-        .add_constant(ctx, ctx.intern("string_height_ext"), string_height_ext)
+        .add_constant(
+            ctx,
+            ctx.intern_static("string_height_ext"),
+            string_height_ext,
+        )
         .unwrap();
 
     create_stub_callback(

@@ -8,7 +8,7 @@ use crate::{
     magic::{MagicConstant, MagicSet},
     object::Object,
     registry::Singleton,
-    thread::{Backtrace, IndexError, VmError},
+    thread::{Backtrace, OpError, VmError},
     user_data::{UserData, UserDataIter},
     value::{Function, Value},
 };
@@ -230,9 +230,9 @@ impl<'gc> BuiltIns<'gc> {
                         match target {
                             Value::Object(object) => {
                                 // Objects are a loop with one iteration over the object itself.
-                                exec.stack().push_back(singleton_iter);
-                                exec.stack().push_back(object);
-                                exec.stack().push_back(Value::Boolean(true));
+                                exec.stack().push(singleton_iter);
+                                exec.stack().push(object);
+                                exec.stack().push(Value::Boolean(true));
                                 Ok(())
                             }
                             Value::UserData(user_data) => {
@@ -240,9 +240,9 @@ impl<'gc> BuiltIns<'gc> {
                                     UserDataIter::Singleton => {
                                         // Singleton userdata are a loop with one iteration over the
                                         // userdata itself.
-                                        exec.stack().push_back(singleton_iter);
-                                        exec.stack().push_back(user_data);
-                                        exec.stack().push_back(Value::Boolean(true));
+                                        exec.stack().push(singleton_iter);
+                                        exec.stack().push(user_data);
+                                        exec.stack().push(Value::Boolean(true));
                                     }
                                     UserDataIter::Iter {
                                         iter,
@@ -276,16 +276,16 @@ impl<'gc> BuiltIns<'gc> {
                         if indexes.len() == 1 {
                             let index = indexes[0];
                             if let Some(index) = index.coerce_string(ctx) {
-                                target.get(index).unwrap_or_default()
+                                target.try_find(index)?.unwrap_or_default()
                             } else {
-                                return Err(IndexError::BadIndex {
+                                return Err(OpError::InvalidIndex {
                                     target: target.into(),
                                     index: index.into(),
                                 }
                                 .into());
                             }
                         } else {
-                            return Err(IndexError::BadMultiIndex {
+                            return Err(OpError::NotMultiIndexable {
                                 target: target.into(),
                                 len: indexes.len(),
                             }
@@ -298,16 +298,21 @@ impl<'gc> BuiltIns<'gc> {
                             if let Some(index) =
                                 index.cast_integer().and_then(|i| i.try_into().ok())
                             {
-                                target.get(index).unwrap_or_default()
+                                target.try_borrow()?.get(index).ok_or_else(|| {
+                                    OpError::BadArrayIndex {
+                                        target: target.into(),
+                                        index,
+                                    }
+                                })?
                             } else {
-                                return Err(IndexError::BadIndex {
+                                return Err(OpError::InvalidIndex {
                                     target: target.into(),
                                     index: index.into(),
                                 }
                                 .into());
                             }
                         } else {
-                            return Err(IndexError::BadMultiIndex {
+                            return Err(OpError::NotMultiIndexable {
                                 target: target.into(),
                                 len: indexes.len(),
                             }
@@ -316,7 +321,7 @@ impl<'gc> BuiltIns<'gc> {
                     }
                     Value::UserData(user_data) => user_data.get_index(ctx, indexes)?,
                     target => {
-                        return Err(IndexError::NotIndexable {
+                        return Err(OpError::NotIndexable {
                             target: target.into(),
                         }
                         .into());
@@ -341,16 +346,16 @@ impl<'gc> BuiltIns<'gc> {
                         if indexes.len() == 1 {
                             let index = indexes[0];
                             if let Some(index) = index.coerce_string(ctx) {
-                                target.set(&ctx, index, value);
+                                target.try_borrow_mut(&ctx)?.set(index, value);
                             } else {
-                                return Err(IndexError::BadIndex {
+                                return Err(OpError::InvalidIndex {
                                     target: target.into(),
                                     index: index.into(),
                                 }
                                 .into());
                             }
                         } else {
-                            return Err(IndexError::BadMultiIndex {
+                            return Err(OpError::NotMultiIndexable {
                                 target: target.into(),
                                 len: indexes.len(),
                             }
@@ -363,16 +368,16 @@ impl<'gc> BuiltIns<'gc> {
                             if let Some(index) =
                                 index.cast_integer().and_then(|i| i.try_into().ok())
                             {
-                                target.set(&ctx, index, value);
+                                target.try_borrow_mut(&ctx)?.set(index, value);
                             } else {
-                                return Err(IndexError::BadIndex {
+                                return Err(OpError::InvalidIndex {
                                     target: target.into(),
                                     index: index.into(),
                                 }
                                 .into());
                             }
                         } else {
-                            return Err(IndexError::BadMultiIndex {
+                            return Err(OpError::NotMultiIndexable {
                                 target: target.into(),
                                 len: indexes.len(),
                             }
@@ -383,7 +388,7 @@ impl<'gc> BuiltIns<'gc> {
                         user_data.set_index(ctx, indexes, value)?;
                     }
                     target => {
-                        return Err(IndexError::NotIndexable {
+                        return Err(OpError::NotIndexable {
                             target: target.into(),
                         }
                         .into());
@@ -405,52 +410,52 @@ impl<'gc> BuiltIns<'gc> {
     /// All magic names are string constants available in [`BuiltIns`].
     pub fn insert_builtins(&self, ctx: Context<'gc>, magic_set: &mut MagicSet<'gc>) {
         magic_set.insert(
-            ctx.intern(Self::BIND),
+            ctx.intern_static(Self::BIND),
             MagicConstant::new_ptr(&ctx, self.bind),
         );
 
         magic_set.insert(
-            ctx.intern(Self::ERROR),
+            ctx.intern_static(Self::ERROR),
             MagicConstant::new_ptr(&ctx, self.error),
         );
 
         magic_set.insert(
-            ctx.intern(Self::PCALL),
+            ctx.intern_static(Self::PCALL),
             MagicConstant::new_ptr(&ctx, self.pcall),
         );
 
         magic_set.insert(
-            ctx.intern(Self::GET_SUPER),
+            ctx.intern_static(Self::GET_SUPER),
             MagicConstant::new_ptr(&ctx, self.get_super),
         );
 
         magic_set.insert(
-            ctx.intern(Self::SET_SUPER),
+            ctx.intern_static(Self::SET_SUPER),
             MagicConstant::new_ptr(&ctx, self.set_super),
         );
 
         magic_set.insert(
-            ctx.intern(Self::INIT_CONSTRUCTOR_SUPER),
+            ctx.intern_static(Self::INIT_CONSTRUCTOR_SUPER),
             MagicConstant::new_ptr(&ctx, self.init_constructor_super),
         );
 
         magic_set.insert(
-            ctx.intern(Self::GET_CONSTRUCTOR_SUPER),
+            ctx.intern_static(Self::GET_CONSTRUCTOR_SUPER),
             MagicConstant::new_ptr(&ctx, self.get_constructor_super),
         );
 
         magic_set.insert(
-            ctx.intern(Self::WITH_LOOP_ITER),
+            ctx.intern_static(Self::WITH_LOOP_ITER),
             MagicConstant::new_ptr(&ctx, self.with_loop_iter),
         );
 
         magic_set.insert(
-            ctx.intern(Self::GET_MULTI_INDEX),
+            ctx.intern_static(Self::GET_MULTI_INDEX),
             MagicConstant::new_ptr(&ctx, self.get_multi_index),
         );
 
         magic_set.insert(
-            ctx.intern(Self::SET_MULTI_INDEX),
+            ctx.intern_static(Self::SET_MULTI_INDEX),
             MagicConstant::new_ptr(&ctx, self.set_multi_index),
         );
     }

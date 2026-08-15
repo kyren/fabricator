@@ -18,7 +18,7 @@ pub mod user_data;
 pub mod value;
 
 pub use self::{
-    array::Array,
+    array::{Array, ArrayVec},
     builtins::BuiltIns,
     callback::{Callback, CallbackFn},
     closure::{Closure, Constant, Prototype},
@@ -28,7 +28,7 @@ pub use self::{
     instructions::ByteCode,
     interpreter::{Context, Interpreter},
     magic::{Magic, MagicConstant, MagicSet},
-    object::Object,
+    object::{Object, ObjectMap},
     registry::{Registry, Singleton},
     stash::{
         Fetchable, Stashable, StashedCallback, StashedClosure, StashedFunction, StashedMagicSet,

@@ -127,18 +127,18 @@ pub trait MagicExt<'gc> {
     fn insert_constant(
         &mut self,
         ctx: vm::Context<'gc>,
-        name: &str,
+        name: &'static str,
         value: impl Into<vm::Value<'gc>>,
     );
 
-    fn insert_callback<F, A, R, E>(&mut self, ctx: vm::Context<'gc>, name: &str, f: F)
+    fn insert_callback<F, A, R, E>(&mut self, ctx: vm::Context<'gc>, name: &'static str, f: F)
     where
         F: Fn(vm::Context<'gc>, A) -> Result<R, E> + 'static,
         A: vm::FromMultiValue<'gc>,
         R: vm::IntoMultiValue<'gc>,
         vm::VmError<'gc>: From<E>;
 
-    fn insert_exec_callback<F, E>(&mut self, ctx: vm::Context<'gc>, name: &str, f: F)
+    fn insert_exec_callback<F, E>(&mut self, ctx: vm::Context<'gc>, name: &'static str, f: F)
     where
         F: Fn(vm::Context<'gc>, vm::Execution<'gc, '_>) -> Result<(), E> + 'static,
         vm::VmError<'gc>: From<E>;
@@ -148,16 +148,16 @@ impl<'gc> MagicExt<'gc> for vm::MagicSet<'gc> {
     fn insert_constant(
         &mut self,
         ctx: vm::Context<'gc>,
-        name: &str,
+        name: &'static str,
         value: impl Into<vm::Value<'gc>>,
     ) {
         self.insert(
-            ctx.intern(name),
+            ctx.intern_static(name),
             vm::MagicConstant::new_ptr(&ctx, value.into()),
         );
     }
 
-    fn insert_callback<F, A, R, E>(&mut self, ctx: vm::Context<'gc>, name: &str, f: F)
+    fn insert_callback<F, A, R, E>(&mut self, ctx: vm::Context<'gc>, name: &'static str, f: F)
     where
         F: Fn(vm::Context<'gc>, A) -> Result<R, E> + 'static,
         A: vm::FromMultiValue<'gc>,
@@ -176,7 +176,7 @@ impl<'gc> MagicExt<'gc> for vm::MagicSet<'gc> {
         )
     }
 
-    fn insert_exec_callback<F, E>(&mut self, ctx: vm::Context<'gc>, name: &str, f: F)
+    fn insert_exec_callback<F, E>(&mut self, ctx: vm::Context<'gc>, name: &'static str, f: F)
     where
         F: Fn(vm::Context<'gc>, vm::Execution<'gc, '_>) -> Result<(), E> + 'static,
         vm::VmError<'gc>: From<E>,

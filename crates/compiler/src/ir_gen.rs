@@ -523,19 +523,22 @@ where
         // We need the `init_constructor_super`, `get_constructor_super`, and `set_super`
         // intrinsics.
 
-        let init_constructor_super_name = self.interner.intern(BuiltIns::INIT_CONSTRUCTOR_SUPER);
+        let init_constructor_super_name = self
+            .interner
+            .intern_static(BuiltIns::INIT_CONSTRUCTOR_SUPER);
         let init_constructor_super = self.push_instruction(
             body.span.start_span(),
             ir::InstructionKind::GetMagic(init_constructor_super_name),
         );
 
-        let get_constructor_super_name = self.interner.intern(BuiltIns::GET_CONSTRUCTOR_SUPER);
+        let get_constructor_super_name =
+            self.interner.intern_static(BuiltIns::GET_CONSTRUCTOR_SUPER);
         let get_constructor_super = self.push_instruction(
             body.span.start_span(),
             ir::InstructionKind::GetMagic(get_constructor_super_name),
         );
 
-        let set_super_name = self.interner.intern(BuiltIns::SET_SUPER);
+        let set_super_name = self.interner.intern_static(BuiltIns::SET_SUPER);
         let set_super = self.push_instruction(
             body.span.start_span(),
             ir::InstructionKind::GetMagic(set_super_name),
@@ -1565,7 +1568,7 @@ where
             ir::InstructionKind::OpenVariable(control_var),
         );
 
-        let with_loop_iter_name = self.interner.intern(BuiltIns::WITH_LOOP_ITER);
+        let with_loop_iter_name = self.interner.intern_static(BuiltIns::WITH_LOOP_ITER);
         let with_loop_iter = self.push_instruction(
             control_start_span,
             ir::InstructionKind::GetMagic(with_loop_iter_name),
@@ -1658,7 +1661,7 @@ where
 
     fn throw_stmt(&mut self, throw_stmt: &ast::ThrowStmt<S>) -> Result<(), IrGenError> {
         let error = self.expression(&throw_stmt.target)?;
-        let error_fn_name = self.interner.intern(BuiltIns::ERROR);
+        let error_fn_name = self.interner.intern_static(BuiltIns::ERROR);
         let error_fn = self.push_instruction(
             throw_stmt.span,
             ir::InstructionKind::GetMagic(error_fn_name),
@@ -1682,7 +1685,7 @@ where
 
         let closure_span = try_catch_stmt.try_block.span();
 
-        let pcall_name = self.interner.intern(BuiltIns::PCALL);
+        let pcall_name = self.interner.intern_static(BuiltIns::PCALL);
         let pcall = self.push_instruction(closure_span, ir::InstructionKind::GetMagic(pcall_name));
 
         let exit_code_var = self.function.variables.insert(ir::Variable::Heap);
@@ -2903,7 +2906,7 @@ where
                 },
             )
         } else {
-            let get_multi_index_name = self.interner.intern(BuiltIns::GET_MULTI_INDEX);
+            let get_multi_index_name = self.interner.intern_static(BuiltIns::GET_MULTI_INDEX);
             let get_multi_index =
                 self.push_instruction(span, ir::InstructionKind::GetMagic(get_multi_index_name));
 
@@ -2934,7 +2937,7 @@ where
                 },
             );
         } else {
-            let set_multi_index_name = self.interner.intern(BuiltIns::SET_MULTI_INDEX);
+            let set_multi_index_name = self.interner.intern_static(BuiltIns::SET_MULTI_INDEX);
             let set_multi_index =
                 self.push_instruction(span, ir::InstructionKind::GetMagic(set_multi_index_name));
 

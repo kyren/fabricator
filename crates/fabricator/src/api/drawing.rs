@@ -40,8 +40,8 @@ pub fn drawing_api<'gc>(
         )?;
     }
 
-    magic.add_constant(ctx, ctx.intern("c_white"), 0xffffff)?;
-    magic.add_constant(ctx, ctx.intern("c_black"), 0x0)?;
+    magic.add_constant(ctx, ctx.intern_static("c_white"), 0xffffff)?;
+    magic.add_constant(ctx, ctx.intern_static("c_black"), 0x0)?;
 
     let make_color_rgb = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (r, g, b): (u8, u8, u8) = exec.stack().consume(ctx)?;
@@ -49,7 +49,7 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, color);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("make_color_rgb"), make_color_rgb)?;
+    magic.add_constant(ctx, ctx.intern_static("make_color_rgb"), make_color_rgb)?;
 
     let draw_sprite = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (sprite, sub_img, x, y): (vm::UserData, i64, f64, f64) = exec.stack().consume(ctx)?;
@@ -72,24 +72,24 @@ pub fn drawing_api<'gc>(
 
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("draw_sprite"), draw_sprite)?;
+    magic.add_constant(ctx, ctx.intern_static("draw_sprite"), draw_sprite)?;
 
     let sprite_get_info = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
         let sprite_id = SpriteUserData::downcast(sprite)?.id;
 
-        let info = vm::Object::new(&ctx);
+        let mut info = vm::ObjectMap::new();
         State::ctx_with(ctx, |state| {
             let sprite = &state.config.sprites[sprite_id];
-            info.set(&ctx, ctx.intern("width"), sprite.size[0] as i64);
-            info.set(&ctx, ctx.intern("height"), sprite.size[1] as i64);
-            info.set(&ctx, ctx.intern("xoffset"), sprite.origin[0] as i64);
-            info.set(&ctx, ctx.intern("yoffset"), sprite.origin[1] as i64);
+            info.set_field(ctx, "width", sprite.size[0] as i64);
+            info.set_field(ctx, "height", sprite.size[1] as i64);
+            info.set_field(ctx, "xoffset", sprite.origin[0] as i64);
+            info.set_field(ctx, "yoffset", sprite.origin[1] as i64);
 
-            let frame_info = vm::Array::new(&ctx);
-            let frames = vm::Array::new(&ctx);
+            let mut frame_info = vm::ArrayVec::new();
+            let mut frames = vm::ArrayVec::new();
             for (i, frame) in sprite.frames.iter().enumerate() {
-                let frame_info_obj = vm::Object::new(&ctx);
+                let mut frame_info_obj = vm::ObjectMap::new();
 
                 let tick_rate = state.config.tick_rate;
                 let playback_speed = sprite.playback_speed;
@@ -101,63 +101,48 @@ pub fn drawing_api<'gc>(
                     playback_length
                 };
 
-                frame_info_obj.set(
-                    &ctx,
-                    ctx.intern("frame"),
+                frame_info_obj.set_field(
+                    ctx,
+                    "frame",
                     frame.frame_start / playback_speed * tick_rate,
                 );
-                frame_info_obj.set(
-                    &ctx,
-                    ctx.intern("duration"),
+                frame_info_obj.set_field(
+                    ctx,
+                    "duration",
                     (next_frame_start - frame.frame_start) / playback_speed * tick_rate,
                 );
-                frame_info.push(&ctx, frame_info_obj);
+                frame_info.push(vm::Object::with_parts(&ctx, frame_info_obj, None));
 
-                let frame_obj = vm::Object::new(&ctx);
+                let mut frame_obj = vm::ObjectMap::new();
                 let texture = &state.config.textures[frame.texture];
                 let texture_page_id = state.config.texture_page_for_texture[frame.texture];
                 let texture_page = &state.config.texture_pages[texture_page_id];
                 let page_position = texture_page.textures[frame.texture];
-                frame_obj.set(&ctx, ctx.intern("x"), page_position[0] as i64);
-                frame_obj.set(&ctx, ctx.intern("y"), page_position[1] as i64);
-                frame_obj.set(&ctx, ctx.intern("w"), texture.size[0] as i64);
-                frame_obj.set(&ctx, ctx.intern("h"), texture.size[1] as i64);
-                frame_obj.set(
-                    &ctx,
-                    ctx.intern("texture"),
+                frame_obj.set_field(ctx, "x", page_position[0] as i64);
+                frame_obj.set_field(ctx, "y", page_position[1] as i64);
+                frame_obj.set_field(ctx, "w", texture.size[0] as i64);
+                frame_obj.set_field(ctx, "h", texture.size[1] as i64);
+                frame_obj.set_field(
+                    ctx,
+                    "texture",
                     ctx.fetch(&state.config.texture_pages[texture_page_id].userdata),
                 );
-                frame_obj.set(
-                    &ctx,
-                    ctx.intern("crop_width"),
-                    texture.cropped_size[0] as i64,
-                );
-                frame_obj.set(
-                    &ctx,
-                    ctx.intern("crop_height"),
-                    texture.cropped_size[1] as i64,
-                );
-                frame_obj.set(
-                    &ctx,
-                    ctx.intern("x_offset"),
-                    texture.cropped_offset[0] as i64,
-                );
-                frame_obj.set(
-                    &ctx,
-                    ctx.intern("y_offset"),
-                    texture.cropped_offset[1] as i64,
-                );
-                frames.push(&ctx, frame_obj);
+                frame_obj.set_field(ctx, "crop_width", texture.cropped_size[0] as i64);
+                frame_obj.set_field(ctx, "crop_height", texture.cropped_size[1] as i64);
+                frame_obj.set_field(ctx, "x_offset", texture.cropped_offset[0] as i64);
+                frame_obj.set_field(ctx, "y_offset", texture.cropped_offset[1] as i64);
+                frames.push(vm::Object::with_parts(&ctx, frame_obj, None));
             }
 
-            info.set(&ctx, ctx.intern("frame_info"), frame_info);
-            info.set(&ctx, ctx.intern("frames"), frames);
+            info.set_field(ctx, "frame_info", frame_info);
+            info.set_field(ctx, "frames", frames);
         })?;
 
-        exec.stack().replace(ctx, info);
+        exec.stack()
+            .replace(ctx, vm::Object::with_parts(&ctx, info, None));
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_info"), sprite_get_info)?;
+    magic.add_constant(ctx, ctx.intern_static("sprite_get_info"), sprite_get_info)?;
 
     let sprite_get_name = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
@@ -168,7 +153,7 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, name);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_name"), sprite_get_name)?;
+    magic.add_constant(ctx, ctx.intern_static("sprite_get_name"), sprite_get_name)?;
 
     let sprite_get_number = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
@@ -178,7 +163,11 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, frame_count as isize);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_number"), sprite_get_number)?;
+    magic.add_constant(
+        ctx,
+        ctx.intern_static("sprite_get_number"),
+        sprite_get_number,
+    )?;
 
     let sprite_get_width = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
@@ -187,7 +176,7 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, width);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_width"), sprite_get_width)?;
+    magic.add_constant(ctx, ctx.intern_static("sprite_get_width"), sprite_get_width)?;
 
     let sprite_get_height = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
@@ -196,7 +185,11 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, height);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_height"), sprite_get_height)?;
+    magic.add_constant(
+        ctx,
+        ctx.intern_static("sprite_get_height"),
+        sprite_get_height,
+    )?;
 
     let sprite_get_xoffset = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
@@ -205,7 +198,11 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, xoffset);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_xoffset"), sprite_get_xoffset)?;
+    magic.add_constant(
+        ctx,
+        ctx.intern_static("sprite_get_xoffset"),
+        sprite_get_xoffset,
+    )?;
 
     let sprite_get_yoffset = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let sprite: vm::UserData = exec.stack().consume(ctx)?;
@@ -214,7 +211,11 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, yoffset);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_yoffset"), sprite_get_yoffset)?;
+    magic.add_constant(
+        ctx,
+        ctx.intern_static("sprite_get_yoffset"),
+        sprite_get_yoffset,
+    )?;
 
     let sprite_get_texture = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let (sprite, index): (vm::UserData, usize) = exec.stack().consume(ctx)?;
@@ -227,7 +228,11 @@ pub fn drawing_api<'gc>(
         exec.stack().replace(ctx, texture);
         Ok(())
     });
-    magic.add_constant(ctx, ctx.intern("sprite_get_texture"), sprite_get_texture)?;
+    magic.add_constant(
+        ctx,
+        ctx.intern_static("sprite_get_texture"),
+        sprite_get_texture,
+    )?;
 
     let texture_get_texel_width = vm::Callback::from_fn(ctx, |ctx, mut exec| {
         let texture_page: vm::UserData = exec.stack().consume(ctx)?;
@@ -240,7 +245,7 @@ pub fn drawing_api<'gc>(
     });
     magic.add_constant(
         ctx,
-        ctx.intern("texture_get_texel_width"),
+        ctx.intern_static("texture_get_texel_width"),
         texture_get_texel_width,
     )?;
 
@@ -255,7 +260,7 @@ pub fn drawing_api<'gc>(
     });
     magic.add_constant(
         ctx,
-        ctx.intern("texture_get_texel_height"),
+        ctx.intern_static("texture_get_texel_height"),
         texture_get_texel_height,
     )?;
 

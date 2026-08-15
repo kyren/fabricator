@@ -638,7 +638,7 @@ impl<'gc> Closure<'gc> {
                 }
             }
         }
-        Self::from_parts(mc, proto, this, Gc::new_slice(mc, &heap))
+        Self::with_parts(mc, proto, this, Gc::new_slice(mc, &heap))
     }
 
     /// Create a new closure using the given `upvalues` array to lookup any required upvalues.
@@ -647,7 +647,7 @@ impl<'gc> Closure<'gc> {
     ///
     /// Panics if the given `heap` slice is not the same length as the prototype's heap variable
     /// slice.
-    pub fn from_parts(
+    pub fn with_parts(
         mc: &Mutation<'gc>,
         proto: Gc<'gc, Prototype<'gc>>,
         this: Option<Value<'gc>>,

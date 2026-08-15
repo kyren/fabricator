@@ -21,7 +21,7 @@ pub fn run_code(
             "default",
             compiler::ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
             compile_settings,
-            name,
+            vm::SharedStr::new(name),
             code,
         )?;
         let closure = vm::Closure::new(&ctx, output.chunk_prototype, None).unwrap();
@@ -45,7 +45,7 @@ fn run_tests(dir: &str) -> bool {
                 let code = io::read_to_string(File::open(&path).unwrap()).unwrap();
                 let _ = writeln!(stdout(), "running {:?}", path);
                 match run_code(
-                    path.to_string_lossy().as_ref(),
+                    &path.to_string_lossy(),
                     &code,
                     if ext.eq_ignore_ascii_case("gml") {
                         compiler::CompileSettings::compat()

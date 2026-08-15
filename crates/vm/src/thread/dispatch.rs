@@ -10,7 +10,7 @@ use crate::{
     instructions::{self, ConstIdx, HeapIdx, IndexType as _, MagicIdx, ProtoIdx, RegIdx, StackIdx},
     interpreter::Context,
     object::Object,
-    string::String,
+    string::{SharedStr, String},
     thread::{thread::OwnedHeapVar, vec_end_slice::VecEndSlice},
     value::{Function, Value},
 };
@@ -25,38 +25,32 @@ pub enum OpError {
         left: ExternValue,
         right: ExternValue,
     },
-    #[error("bad object {object:?}")]
-    BadObject { object: ExternValue },
-    #[error("bad key {key:?}")]
-    BadKey { key: ExternValue },
+    #[error("{target:?} does not allow indexing")]
+    NotIndexable { target: ExternValue },
+    #[error("{target:?} does not allow multi indexing with {len} values")]
+    NotMultiIndexable { target: ExternValue, len: usize },
+    #[error("invalid index {index:?} of {target:?}")]
+    InvalidIndex {
+        target: ExternValue,
+        index: ExternValue,
+    },
+    #[error("{object:?} cannot have fields")]
+    NoFieldAccess { object: ExternValue },
+    #[error("invalid field {field:?}")]
+    InvalidField { field: ExternValue },
     #[error("no such field {field:?} in {target:?}")]
     NoSuchField {
         target: ExternValue,
-        field: ExternValue,
+        field: SharedStr,
     },
+    #[error("index {index:?} is out of bounds for {target:?}")]
+    BadArrayIndex { target: ExternValue, index: usize },
     #[error("bad call of {target:?}")]
     BadCall { target: &'static str },
     #[error("bad index value {index}")]
     BadIndexValue { index: ExternValue },
     #[error("not enough stack frames in {op:?}")]
     InvalidStackFrames { op: &'static str },
-}
-
-#[derive(Debug, Error)]
-#[error("out of bounds access on array for index {0}")]
-pub struct ArrayBoundsError(usize);
-
-#[derive(Debug, Clone, Error)]
-pub enum IndexError {
-    #[error("{target:?} does not allow indexing")]
-    NotIndexable { target: ExternValue },
-    #[error("bad index {index:?} of {target:?}")]
-    BadIndex {
-        target: ExternValue,
-        index: ExternValue,
-    },
-    #[error("{target:?} does not allow multi indexing with {len} values")]
-    BadMultiIndex { target: ExternValue, len: usize },
 }
 
 pub(super) enum Next<'gc> {
@@ -135,15 +129,15 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
     #[inline]
     fn do_get_field(&self, obj: Value<'gc>, key: String<'gc>) -> Result<Value<'gc>, RuntimeError> {
         match obj {
-            Value::Object(object) => object.get(key).ok_or_else(|| {
+            Value::Object(object) => object.try_find(key)?.ok_or_else(|| {
                 OpError::NoSuchField {
                     target: obj.into(),
-                    field: Value::from(key).into(),
+                    field: key.as_shared().clone(),
                 }
                 .into()
             }),
             Value::UserData(user_data) => Ok(user_data.get_field(self.ctx, key)?),
-            _ => Err(OpError::BadObject { object: obj.into() }.into()),
+            _ => Err(OpError::NoFieldAccess { object: obj.into() }.into()),
         }
     }
 
@@ -156,13 +150,13 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
     ) -> Result<(), RuntimeError> {
         match obj {
             Value::Object(object) => {
-                object.set(&self.ctx, key, value);
+                object.try_borrow_mut(&self.ctx)?.set(key, value);
             }
             Value::UserData(user_data) => {
                 user_data.set_field(self.ctx, key, value)?;
             }
             _ => {
-                return Err(OpError::BadObject { object: obj.into() }.into());
+                return Err(OpError::NoFieldAccess { object: obj.into() }.into());
             }
         }
 
@@ -178,26 +172,32 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
         match target {
             Value::Object(object) => {
                 let Some(index) = index.coerce_string(self.ctx) else {
-                    return Err(IndexError::BadIndex {
+                    return Err(OpError::InvalidIndex {
                         target: target.into(),
                         index: index.into(),
                     }
                     .into());
                 };
-                Ok(object.get(index).unwrap_or_default())
+                Ok(object.try_find(index)?.unwrap_or_default())
             }
             Value::Array(array) => {
                 let index = index
                     .cast_integer()
                     .and_then(|i| i.try_into().ok())
-                    .ok_or_else(|| IndexError::BadIndex {
+                    .ok_or_else(|| OpError::InvalidIndex {
                         target: target.into(),
                         index: index.into(),
                     })?;
-                Ok(array.get(index).ok_or(ArrayBoundsError(index))?)
+                Ok(array
+                    .try_borrow()?
+                    .get(index)
+                    .ok_or(OpError::BadArrayIndex {
+                        target: array.into(),
+                        index,
+                    })?)
             }
             Value::UserData(user_data) => Ok(user_data.get_index(self.ctx, &[index])?),
-            _ => Err(IndexError::NotIndexable {
+            _ => Err(OpError::NotIndexable {
                 target: target.into(),
             }
             .into()),
@@ -214,28 +214,28 @@ impl<'gc, 'a> Dispatch<'gc, 'a> {
         match target {
             Value::Object(object) => {
                 let Some(index) = index.coerce_string(self.ctx) else {
-                    return Err(IndexError::BadIndex {
+                    return Err(OpError::InvalidIndex {
                         target: target.into(),
                         index: index.into(),
                     }
                     .into());
                 };
-                object.set(&self.ctx, index, value);
+                object.try_borrow_mut(&self.ctx)?.set(index, value);
                 Ok(())
             }
             Value::Array(array) => {
                 let index = index
                     .cast_integer()
                     .and_then(|i| i.try_into().ok())
-                    .ok_or_else(|| IndexError::BadIndex {
+                    .ok_or_else(|| OpError::InvalidIndex {
                         target: target.into(),
                         index: index.into(),
                     })?;
-                array.set(&self.ctx, index, value);
+                array.try_borrow_mut(&self.ctx)?.set(index, value);
                 Ok(())
             }
             Value::UserData(user_data) => Ok(user_data.set_index(self.ctx, &[index], value)?),
-            _ => Err(IndexError::NotIndexable {
+            _ => Err(OpError::NotIndexable {
                 target: target.into(),
             }
             .into()),
@@ -304,13 +304,13 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
 
     #[inline]
     fn push_this(&mut self) -> Result<(), Self::Error> {
-        self.this.push_back(self.get_this());
+        self.this.push(self.get_this());
         Ok(())
     }
 
     #[inline]
     fn pop_this(&mut self) -> Result<(), Self::Error> {
-        self.this.pop_back();
+        self.this.pop();
         Ok(())
     }
 
@@ -363,7 +363,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
 
         // Inner closures bind the current `self` value if the `bind_this` flag is set, otherwise
         // they are created unbound.
-        self.registers[dest.index()] = Closure::from_parts(
+        self.registers[dest.index()] = Closure::with_parts(
             &self.ctx,
             proto,
             if bind_this {
@@ -433,8 +433,8 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     fn get_field(&mut self, dest: RegIdx, object: RegIdx, key: RegIdx) -> Result<(), Self::Error> {
         let key_val = self.registers[key.index()];
         let Some(key) = key_val.as_string() else {
-            return Err(OpError::BadKey {
-                key: key_val.into(),
+            return Err(OpError::InvalidField {
+                field: key_val.into(),
             }
             .into());
         };
@@ -447,8 +447,8 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     fn set_field(&mut self, object: RegIdx, key: RegIdx, value: RegIdx) -> Result<(), Self::Error> {
         let key_val = self.registers[key.index()];
         let Some(key) = key_val.as_string() else {
-            return Err(OpError::BadKey {
-                key: key_val.into(),
+            return Err(OpError::InvalidField {
+                field: key_val.into(),
             }
             .into());
         };
@@ -890,13 +890,13 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
 
     #[inline]
     fn push_stack_frame(&mut self) -> Result<(), Self::Error> {
-        self.stack_frame_boundaries.push_back(self.stack.len());
+        self.stack_frame_boundaries.push(self.stack.len());
         Ok(())
     }
 
     #[inline]
     fn pop_stack_frame(&mut self) -> Result<(), Self::Error> {
-        if let Some(boundary) = self.stack_frame_boundaries.pop_back() {
+        if let Some(boundary) = self.stack_frame_boundaries.pop() {
             self.stack.truncate(boundary);
             Ok(())
         } else {
@@ -915,7 +915,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
             }
             .into())
         } else {
-            self.stack_frame_boundaries.pop_back();
+            self.stack_frame_boundaries.pop();
             Ok(())
         }
     }
@@ -923,8 +923,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     #[inline]
     fn split_stack_frame(&mut self, base: StackIdx) -> Result<(), Self::Error> {
         if let Some(&boundary) = self.stack_frame_boundaries.last() {
-            self.stack_frame_boundaries
-                .push_back(boundary + base.index());
+            self.stack_frame_boundaries.push(boundary + base.index());
             Ok(())
         } else {
             Err(OpError::InvalidStackFrames {
@@ -939,7 +938,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         if self.stack_frame_boundaries.is_empty() {
             return Err(OpError::InvalidStackFrames { op: "stack_push" }.into());
         }
-        self.stack.push_back(self.registers[source.index()]);
+        self.stack.push(self.registers[source.index()]);
         Ok(())
     }
 
@@ -1128,7 +1127,7 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
     fn return_(&mut self) -> Result<ControlFlow<Self::Break>, Self::Error> {
         let stack_frame_start = self
             .stack_frame_boundaries
-            .pop_back()
+            .pop()
             .ok_or_else(|| OpError::InvalidStackFrames { op: "return" })?;
 
         Ok(ControlFlow::Break(Next::Return {

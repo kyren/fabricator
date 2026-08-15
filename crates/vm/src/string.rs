@@ -11,25 +11,58 @@ use gc_arena::{
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// A shared string with 'static lifetime.
-#[derive(Clone, Eq, PartialEq, Hash, Collect)]
+///
+/// Can be backed by either an `Arc<str>` or a `&'static str`.
+#[derive(Clone, Collect)]
 #[collect(require_static)]
-pub struct SharedStr(Arc<str>);
+pub struct SharedStr(SharedStrInner);
 
-impl<S: Into<Arc<str>>> From<S> for SharedStr {
-    fn from(value: S) -> Self {
-        SharedStr::new(value)
+#[derive(Clone, Collect)]
+#[collect(require_static)]
+enum SharedStrInner {
+    Arc(Arc<str>),
+    Static(&'static str),
+}
+
+impl From<Arc<str>> for SharedStr {
+    #[inline]
+    fn from(s: Arc<str>) -> Self {
+        SharedStr(SharedStrInner::Arc(s))
+    }
+}
+
+impl From<&'static str> for SharedStr {
+    #[inline]
+    fn from(s: &'static str) -> Self {
+        SharedStr(SharedStrInner::Static(s))
+    }
+}
+
+impl PartialEq for SharedStr {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for SharedStr {}
+
+impl hash::Hash for SharedStr {
+    #[inline]
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state)
     }
 }
 
 impl fmt::Display for SharedStr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0.as_ref())
+        write!(f, "{}", self.as_str())
     }
 }
 
 impl fmt::Debug for SharedStr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0.as_ref())
+        write!(f, "{:?}", self.as_str())
     }
 }
 
@@ -38,34 +71,53 @@ impl ops::Deref for SharedStr {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.as_str()
     }
 }
 
 impl AsRef<str> for SharedStr {
+    #[inline]
     fn as_ref(&self) -> &str {
         self.as_str()
     }
 }
 
 impl SharedStr {
-    pub fn new(name: impl Into<Arc<str>>) -> Self {
-        Self(name.into())
+    #[inline]
+    pub fn new(s: &str) -> SharedStr {
+        SharedStr(SharedStrInner::Arc(s.into()))
+    }
+
+    #[inline]
+    pub fn from_arc(s: Arc<str>) -> SharedStr {
+        SharedStr(SharedStrInner::Arc(s))
+    }
+
+    #[inline]
+    pub fn from_static(s: &'static str) -> SharedStr {
+        SharedStr(SharedStrInner::Static(s))
     }
 
     #[inline]
     pub fn as_str(&self) -> &str {
-        self.0.as_ref()
+        match &self.0 {
+            SharedStrInner::Arc(s) => s.as_ref(),
+            &SharedStrInner::Static(s) => s,
+        }
     }
 }
 
 impl Borrow<str> for SharedStr {
     #[inline]
     fn borrow(&self) -> &str {
-        &self.0
+        self.as_str()
     }
 }
 
+/// A unique, garbage collected reference to a string.
+///
+/// Because the string is guaranteed to be unique for a specific interpreter, hashing and equality
+/// checks are done by *GC pointer value* without needing to reference the string itself.
 #[derive(Copy, Clone, Collect)]
 #[collect(no_drop)]
 pub struct String<'gc>(Gc<'gc, SharedStr>);
@@ -111,7 +163,7 @@ impl<'gc> String<'gc> {
 
     #[inline]
     pub fn as_str(self) -> &'gc str {
-        self.0.as_ref().as_ref()
+        self.0.as_ref().as_str()
     }
 
     #[inline]
@@ -161,7 +213,17 @@ impl<'gc> InternedStrings<'gc> {
         Self(Gc::new(mc, InternedStringsInner(Default::default())))
     }
 
-    pub fn intern(
+    pub fn intern(self, mc: &Mutation<'gc>, s: &str) -> String<'gc> {
+        self.intern_shared(mc, s, || SharedStr(SharedStrInner::Arc(s.into())))
+    }
+
+    pub fn intern_static(self, mc: &Mutation<'gc>, s: &'static str) -> String<'gc> {
+        self.intern_shared(mc, s, || s.into())
+    }
+
+    /// For correctness, `make_shared` *must* return a shared version of the same string `s`,
+    /// otherwise, the [`String`] uniqueness guarantee may not be upheld.
+    fn intern_shared(
         self,
         mc: &Mutation<'gc>,
         s: &str,

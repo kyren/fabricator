@@ -249,6 +249,7 @@ pub fn array_shuffle<'gc>(
     ctx: vm::Context<'gc>,
     (src, src_index, length): (vm::Array<'gc>, Option<isize>, Option<isize>),
 ) -> Result<vm::Array<'gc>, vm::RuntimeError> {
+    let src = src.try_borrow()?;
     let (src_range, is_reverse) = resolve_array_range(src.len(), src_index, length)?;
 
     let mut vals: Vec<_> = if is_reverse {

@@ -580,7 +580,7 @@ fn load_scripts(
                     ScriptMode::Compat => compiler::CompileSettings::compat(),
                     ScriptMode::Modern => compiler::CompileSettings::strict(),
                 },
-                script.path.to_string_lossy().into_owned(),
+                vm::SharedStr::new(&script.path.to_string_lossy()),
                 &code_buf,
             )?;
         }
@@ -603,7 +603,7 @@ fn load_scripts(
                         ScriptMode::Modern => compiler::CompileSettings::strict(),
                     }
                     .export_top_level_functions(false),
-                    name.into_owned(),
+                    vm::SharedStr::new(&name),
                     &code_buf,
                 )?;
                 let proto = proto_output.chunk_prototype;

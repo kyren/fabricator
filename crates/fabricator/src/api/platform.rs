@@ -11,12 +11,16 @@ pub fn platform_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
     let mouse_x_magic = create_magic_ro(ctx, |ctx| {
         InputState::ctx_with(ctx, |input| Ok((input.mouse_position[0] as f64).into()))?
     });
-    magic.add(ctx.intern("mouse_x"), mouse_x_magic).unwrap();
+    magic
+        .add(ctx.intern_static("mouse_x"), mouse_x_magic)
+        .unwrap();
 
     let mouse_y_magic = create_magic_ro(ctx, |ctx| {
         InputState::ctx_with(ctx, |input| Ok((input.mouse_position[1] as f64).into()))?
     });
-    magic.add(ctx.intern("mouse_y"), mouse_y_magic).unwrap();
+    magic
+        .add(ctx.intern_static("mouse_y"), mouse_y_magic)
+        .unwrap();
 
     for (name, bits) in [
         ("mb_left", MouseButtons::Left.bits()),
@@ -25,7 +29,7 @@ pub fn platform_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         ("mb_any", MouseButtons::all().bits()),
     ] {
         magic
-            .add_constant(ctx, ctx.intern(name), bits as i64)
+            .add_constant(ctx, ctx.intern_static(name), bits as i64)
             .unwrap();
     }
 
@@ -38,7 +42,11 @@ pub fn platform_api<'gc>(ctx: vm::Context<'gc>) -> vm::MagicSet<'gc> {
         })?
     });
     magic
-        .add_constant(ctx, ctx.intern("mouse_check_button"), mouse_check_button)
+        .add_constant(
+            ctx,
+            ctx.intern_static("mouse_check_button"),
+            mouse_check_button,
+        )
         .unwrap();
 
     magic

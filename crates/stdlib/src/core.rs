@@ -86,7 +86,7 @@ pub fn debug_get_callstack<'gc>(
         frame_depth
     };
 
-    let array = vm::Array::new(&ctx);
+    let mut array = vm::ArrayVec::new();
     for frame in 0..max_depth {
         let frame_desc = match exec.upper_frame(frame) {
             vm::StackFrame::Closure(closure_frame) => ctx.intern(&format!(
@@ -98,10 +98,10 @@ pub fn debug_get_callstack<'gc>(
                 ctx.intern(&vm::Value::Callback(callback).to_string())
             }
         };
-        array.push(&ctx, frame_desc);
+        array.push(frame_desc);
     }
 
-    exec.stack().push_back(array);
+    exec.stack().replace(ctx, array);
     Ok(())
 }
 
@@ -133,14 +133,15 @@ pub fn script_execute_ext<'gc>(
         Option<isize>,
     ) = exec.stack().consume(ctx)?;
     if let Some(args) = args {
+        let args = args.try_borrow()?;
         let (range, reverse) = resolve_array_range(args.len(), offset, count)?;
         if reverse {
             for i in range.rev() {
-                exec.stack().push_back(args.get(i).unwrap());
+                exec.stack().push(args.get(i).unwrap());
             }
         } else {
             for i in range {
-                exec.stack().push_back(args.get(i).unwrap());
+                exec.stack().push(args.get(i).unwrap());
             }
         }
     }
@@ -166,14 +167,15 @@ pub fn method_call<'gc>(
         Option<isize>,
     ) = exec.stack().consume(ctx)?;
     if let Some(args) = args {
+        let args = args.try_borrow()?;
         let (range, reverse) = resolve_array_range(args.len(), offset, count)?;
         if reverse {
             for i in range.rev() {
-                exec.stack().push_back(args.get(i).unwrap());
+                exec.stack().push(args.get(i).unwrap());
             }
         } else {
             for i in range {
-                exec.stack().push_back(args.get(i).unwrap());
+                exec.stack().push(args.get(i).unwrap());
             }
         }
     }
@@ -185,10 +187,10 @@ pub fn array_concat<'gc>(
     ctx: vm::Context<'gc>,
     mut exec: vm::Execution<'gc, '_>,
 ) -> Result<(), vm::VmError<'gc>> {
-    let array = vm::Array::new(&ctx);
+    let mut array = vm::ArrayVec::new();
     for i in 0..exec.stack().len() {
         let arr: vm::Array = exec.stack().from_index(ctx, i)?;
-        array.extend(&ctx, arr.borrow().iter().copied());
+        array.extend(arr.try_borrow()?.iter());
     }
     exec.stack().replace(ctx, array);
     Ok(())
@@ -206,7 +208,7 @@ pub fn struct_get<'gc>(
     let key = key
         .coerce_string(ctx)
         .ok_or_else(|| vm::RuntimeError::msg("key not coercible to string"))?;
-    Ok(obj.get(key).unwrap_or(vm::Value::Undefined))
+    Ok(obj.try_find(key)?.unwrap_or(vm::Value::Undefined))
 }
 
 /// Set a key / value pair in a struct.
@@ -219,7 +221,7 @@ pub fn struct_set<'gc>(
     let key = key
         .coerce_string(ctx)
         .ok_or_else(|| vm::RuntimeError::msg("key not coercible to string"))?;
-    obj.set(&ctx, key, value);
+    obj.try_borrow_mut(&ctx)?.set(key, value);
     Ok(())
 }
 
@@ -230,7 +232,7 @@ pub fn struct_exists<'gc>(
     let key = key
         .coerce_string(ctx)
         .ok_or_else(|| vm::RuntimeError::msg("key not coercible to string"))?;
-    Ok(obj.get(key).is_some())
+    Ok(obj.try_find(key)?.is_some())
 }
 
 pub fn struct_remove<'gc>(
@@ -240,25 +242,25 @@ pub fn struct_remove<'gc>(
     let key = key
         .coerce_string(ctx)
         .ok_or_else(|| vm::RuntimeError::msg("key not coercible to string"))?;
-    obj.remove(&ctx, key);
+    obj.try_borrow_mut(&ctx)?.remove(key);
     Ok(())
 }
 
 pub fn struct_get_names<'gc>(
     ctx: vm::Context<'gc>,
     obj: vm::Object<'gc>,
-) -> Result<vm::Array<'gc>, Infallible> {
+) -> Result<vm::Array<'gc>, vm::object::ObjectBorrowError> {
     Ok(vm::Array::from_iter(
         &ctx,
-        obj.borrow().map.keys().map(|&k| k.into()),
+        obj.try_borrow()?.keys().map(|k| k.into()),
     ))
 }
 
 pub fn struct_names_count<'gc>(
     _ctx: vm::Context<'gc>,
     obj: vm::Object<'gc>,
-) -> Result<i64, Infallible> {
-    Ok(obj.borrow().map.keys().len() as i64)
+) -> Result<i64, vm::object::ObjectBorrowError> {
+    Ok(obj.try_borrow()?.len() as i64)
 }
 
 pub fn variable_global_get<'gc>(

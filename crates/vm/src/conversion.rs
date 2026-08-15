@@ -3,9 +3,10 @@ use std::{array, borrow::Cow, iter, ops, string::String as StdString};
 use thiserror::Error;
 
 use crate::{
-    array::Array,
+    array::{Array, ArrayVec},
     callback::Callback,
     closure::Closure,
+    error::RuntimeError,
     interpreter::Context,
     object::Object,
     string::String,
@@ -90,7 +91,7 @@ impl<'gc> IntoValue<'gc> for isize {
 
 impl<'gc> IntoValue<'gc> for &'static str {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        Value::String(ctx.intern(self))
+        Value::String(ctx.intern_static(self))
     }
 }
 
@@ -129,11 +130,11 @@ where
 
 impl<'gc, T: IntoValue<'gc>> IntoValue<'gc> for Vec<T> {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        let array = Array::new(&ctx);
-        for (i, v) in self.into_iter().enumerate().rev() {
-            array.set(&ctx, i, v.into_value(ctx));
-        }
-        array.into()
+        Array::from_vec(
+            &ctx,
+            ArrayVec::from_iter(self.into_iter().map(|v| v.into_value(ctx))),
+        )
+        .into()
     }
 }
 
@@ -142,11 +143,11 @@ where
     &'a T: IntoValue<'gc>,
 {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        let array = Array::new(&ctx);
-        for (i, v) in self.iter().enumerate().rev() {
-            array.set(&ctx, i, v.into_value(ctx));
-        }
-        array.into()
+        Array::from_vec(
+            &ctx,
+            ArrayVec::from_iter(self.iter().map(|v| v.into_value(ctx))),
+        )
+        .into()
     }
 }
 
@@ -155,26 +156,26 @@ where
     T: IntoValue<'gc>,
 {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        let array = Array::new(&ctx);
-        for (i, v) in self.into_iter().enumerate().rev() {
-            array.set(&ctx, i, v.into_value(ctx));
-        }
-        array.into()
+        Array::from_vec(
+            &ctx,
+            ArrayVec::from_iter(self.into_iter().map(|v| v.into_value(ctx))),
+        )
+        .into()
     }
 }
 
 pub trait FromValue<'gc>: Sized {
-    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError>;
+    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError>;
 }
 
 impl<'gc> FromValue<'gc> for Value<'gc> {
-    fn from_value(_: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(_: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         Ok(value)
     }
 }
 
 impl<'gc> FromValue<'gc> for bool {
-    fn from_value(_ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(_ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         Ok(value.cast_bool())
     }
 }
@@ -187,7 +188,7 @@ macro_rules! impl_int_from {
                 fn from_value(
                     _: Context<'gc>,
                     value: Value<'gc>,
-                ) -> Result<Self, TypeError> {
+                ) -> Result<Self, RuntimeError> {
                     if let Some(i) = value.cast_integer() {
                         if let Ok(i) = <$i>::try_from(i) {
                             Ok(i)
@@ -195,13 +196,13 @@ macro_rules! impl_int_from {
                             Err(TypeError::new (
                                 stringify!($i),
                                 "integer out of range",
-                            ))
+                            ).into())
                         }
                     } else {
                         Err(TypeError::new (
                             stringify!($i),
                             value.type_name(),
-                        ))
+                        ).into())
                     }
                 }
             }
@@ -217,14 +218,14 @@ macro_rules! impl_float_from {
                 fn from_value(
                     _: Context<'gc>,
                     value: Value<'gc>,
-                ) -> Result<Self, TypeError> {
+                ) -> Result<Self, RuntimeError> {
                     if let Some(n) = value.cast_float() {
                         Ok(n as $f)
                     } else {
                         Err(TypeError::new (
                             stringify!($f),
                             value.type_name(),
-                        ))
+                        ).into())
                     }
                 }
             }
@@ -234,11 +235,11 @@ macro_rules! impl_float_from {
 impl_float_from!(f32, f64);
 
 impl<'gc> FromValue<'gc> for Number {
-    fn from_value(_ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(_ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         if let Some(n) = value.to_number() {
             Ok(n)
         } else {
-            Err(TypeError::new("numeric value", value.type_name()))
+            Err(TypeError::new("numeric value", value.type_name()).into())
         }
     }
 }
@@ -250,14 +251,14 @@ macro_rules! impl_from {
                 fn from_value(
                     _: Context<'gc>,
                     value: Value<'gc>,
-                ) -> Result<Self, TypeError> {
+                ) -> Result<Self, RuntimeError> {
                     match value {
                         Value::$e(a) => Ok(a),
                         _ => {
                             Err(TypeError::new (
                                 stringify!($e),
                                 value.type_name(),
-                            ))
+                            ).into())
                         }
                     }
                 }
@@ -274,27 +275,27 @@ impl_from! {
 }
 
 impl<'gc> FromValue<'gc> for String<'gc> {
-    fn from_value(_ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(_ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         if let Some(s) = value.as_string() {
             Ok(s)
         } else {
-            Err(TypeError::new("string", value.type_name()))
+            Err(TypeError::new("string", value.type_name()).into())
         }
     }
 }
 
 impl<'gc> FromValue<'gc> for Function<'gc> {
-    fn from_value(_: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(_: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         match value {
             Value::Closure(closure) => Ok(Function::Closure(closure)),
             Value::Callback(callback) => Ok(Function::Callback(callback)),
-            v => Err(TypeError::new("callback or closure", v.type_name())),
+            v => Err(TypeError::new("callback or closure", v.type_name()).into()),
         }
     }
 }
 
 impl<'gc, T: FromValue<'gc>> FromValue<'gc> for Option<T> {
-    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         Ok(if value.is_undefined() {
             None
         } else {
@@ -304,40 +305,44 @@ impl<'gc, T: FromValue<'gc>> FromValue<'gc> for Option<T> {
 }
 
 impl<'gc, T: FromValue<'gc>> FromValue<'gc> for Vec<T> {
-    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         if let Value::Array(array) = value {
-            (0..array.len())
-                .map(|i| T::from_value(ctx, array.get(i).unwrap()))
+            array
+                .try_borrow()?
+                .iter()
+                .map(|v| T::from_value(ctx, v))
                 .collect()
         } else {
-            Err(TypeError::new("array", value.type_name()))
+            Err(TypeError::new("array", value.type_name()).into())
         }
     }
 }
 
 impl<'gc, T: FromValue<'gc>, const N: usize> FromValue<'gc> for [T; N] {
-    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         if let Value::Array(array) = value {
+            let array = array.try_borrow()?;
             if array.len() != N {
                 return Err(TypeError::new(
                     format!("array of length {N}"),
                     format!("array of length {}", array.len()),
-                ));
+                )
+                .into());
             }
 
             let mut res: [Option<T>; N] = array::from_fn(|_| None);
             for i in 0..N {
-                res[i] = Some(T::from_value(ctx, array.get(i).unwrap())?);
+                res[i] = Some(T::from_value(ctx, array[i])?);
             }
             Ok(res.map(|r| r.unwrap()))
         } else {
-            Err(TypeError::new("sequence", value.type_name()))
+            Err(TypeError::new("sequence", value.type_name()).into())
         }
     }
 }
 
 impl<'gc> FromValue<'gc> for StdString {
-    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, TypeError> {
+    fn from_value(ctx: Context<'gc>, value: Value<'gc>) -> Result<Self, RuntimeError> {
         let str = String::from_value(ctx, value)?;
         Ok(str.as_str().to_owned())
     }
@@ -357,14 +362,14 @@ pub trait FromMultiValue<'gc>: Sized {
     fn from_multi_value(
         ctx: Context<'gc>,
         values: impl Iterator<Item = Value<'gc>>,
-    ) -> Result<Self, TypeError>;
+    ) -> Result<Self, RuntimeError>;
 }
 
 impl<'gc, T: FromValue<'gc>> FromMultiValue<'gc> for T {
     fn from_multi_value(
         ctx: Context<'gc>,
         mut values: impl Iterator<Item = Value<'gc>>,
-    ) -> Result<Self, TypeError> {
+    ) -> Result<Self, RuntimeError> {
         T::from_value(ctx, values.next().unwrap_or(Value::Undefined))
     }
 }
@@ -474,7 +479,7 @@ impl<'gc, I: FromValue<'gc>> FromMultiValue<'gc> for Variadic<Vec<I>> {
     fn from_multi_value(
         ctx: Context<'gc>,
         values: impl Iterator<Item = Value<'gc>>,
-    ) -> Result<Self, TypeError> {
+    ) -> Result<Self, RuntimeError> {
         values.map(|v| I::from_value(ctx, v)).collect()
     }
 }
@@ -483,7 +488,7 @@ impl<'gc, I: FromValue<'gc>, const N: usize> FromMultiValue<'gc> for Variadic<[I
     fn from_multi_value(
         ctx: Context<'gc>,
         mut values: impl Iterator<Item = Value<'gc>>,
-    ) -> Result<Self, TypeError> {
+    ) -> Result<Self, RuntimeError> {
         let mut res: [Option<I>; N] = array::from_fn(|_| None);
         for i in 0..N {
             res[i] = Some(I::from_value(
@@ -524,7 +529,7 @@ macro_rules! impl_tuple {
             fn from_multi_value(
                 ctx: Context<'gc>,
                 mut values: impl Iterator<Item = Value<'gc>>,
-            ) -> Result<Self, TypeError> {
+            ) -> Result<Self, RuntimeError> {
                 $(let $name = FromMultiValue::from_multi_value(ctx, &mut values)?;)*
                 Ok(($($name,)*))
             }

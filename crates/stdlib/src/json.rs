@@ -24,20 +24,20 @@ pub fn json_to_value<'gc>(
         }
         serde_json::Value::String(s) => Ok(ctx.intern(&s).into()),
         serde_json::Value::Array(values) => {
-            let array = vm::Array::new(&ctx);
+            let mut array = vm::ArrayVec::new();
             for value in values {
-                array.push(&ctx, json_to_value(ctx, value)?);
+                array.push(json_to_value(ctx, value)?);
             }
-            Ok(vm::Value::Array(array))
+            Ok(vm::Value::Array(vm::Array::from_vec(&ctx, array)))
         }
         serde_json::Value::Object(map) => {
-            let obj = vm::Object::new(&ctx);
+            let mut obj = vm::ObjectMap::new();
             for (key, value) in map {
                 let key = ctx.intern(&key);
                 let value = json_to_value(ctx, value)?;
-                obj.set(&ctx, key, value);
+                obj.set(key, value);
             }
-            Ok(vm::Value::Object(obj))
+            Ok(vm::Value::Object(vm::Object::with_parts(&ctx, obj, None)))
         }
     }
 }
@@ -76,8 +76,10 @@ pub fn value_to_json<'gc>(
             }
 
             let mut map = serde_json::Map::new();
-            let borrow = obj.borrow();
-            for (&key, &value) in &borrow.map {
+            let borrow = obj
+                .try_borrow()
+                .map_err(|_| ToJsonError::BorrowError("Object"))?;
+            for (key, value) in &*borrow {
                 map.insert(
                     key.as_str().to_owned(),
                     value_to_json(ctx, recursive_check, value)?,
@@ -94,8 +96,10 @@ pub fn value_to_json<'gc>(
             }
 
             let mut array = Vec::new();
-            let borrow = arr.borrow();
-            for &value in &*borrow {
+            let borrow = arr
+                .try_borrow()
+                .map_err(|_| ToJsonError::BorrowError("Array"))?;
+            for value in &*borrow {
                 array.push(value_to_json(ctx, recursive_check, value)?);
             }
 
@@ -124,6 +128,8 @@ pub fn value_to_json<'gc>(
 pub enum ToJsonError {
     #[error("cannot convert recursive {0} to JSON")]
     Recursive(&'static str),
+    #[error("`{0}` is already borrowed mutably")]
+    BorrowError(&'static str),
     #[error("`{0}` cannot be converted to JSON")]
     InvalidType(&'static str),
     #[error("cannot convert non-finite number to JSON")]
