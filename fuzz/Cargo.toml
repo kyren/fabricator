@@ -1,0 +1,46 @@
+[package]
+name = "fabricator-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1.4", features = ["derive"] }
+
+anyhow = "1.0"
+gc-arena = "0.7"
+thiserror = "1.0"
+
+fabricator-stdlib.path = "../fabricator/crates/stdlib"
+fabricator-compiler.path = "../fabricator/crates/compiler"
+fabricator-cli = { path = "../fabricator/crates/cli" }
+fabricator-vm.path = "../fabricator/crates/vm"
+
+# Use independent workspace for fuzzers
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_interpret_str"
+path = "fuzz_targets/fuzz_interpret_str.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_interpret_ast"
+path = "fuzz_targets/fuzz_interpret_ast.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_interpret_bytecode"
+path = "fuzz_targets/fuzz_interpret_bytecode.rs"
+test = false
+doc = false
+bench = false
