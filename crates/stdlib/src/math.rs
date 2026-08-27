@@ -15,8 +15,63 @@ pub fn cos<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
     Ok(arg.cos())
 }
 
+/// Cosine of an angle given in degrees.
+pub fn dcos<'gc>(ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    let Ok(radians) = degtorad(ctx, arg);
+    cos(ctx, radians)
+}
+
 pub fn sin<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
     Ok(arg.sin())
+}
+
+/// Sine of an angle given in degrees.
+pub fn dsin<'gc>(ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    let Ok(radians) = degtorad(ctx, arg);
+    sin(ctx, radians)
+}
+
+pub fn tan<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.tan())
+}
+
+/// Tangent of an angle given in degrees.
+pub fn dtan<'gc>(ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    let Ok(radians) = degtorad(ctx, arg);
+    tan(ctx, radians)
+}
+
+/// Returns the arc sine in radians, or NaN outside the domain [-1, 1].
+pub fn arcsin<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.asin())
+}
+
+/// Arc sine returned in degrees.
+pub fn darcsin<'gc>(ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    let Ok(angle) = arcsin(ctx, arg);
+    radtodeg(ctx, angle)
+}
+
+/// Returns the arc cosine in radians, or NaN outside the domain [-1, 1].
+pub fn arccos<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.acos())
+}
+
+/// Arc cosine returned in degrees.
+pub fn darccos<'gc>(ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    let Ok(angle) = arccos(ctx, arg);
+    radtodeg(ctx, angle)
+}
+
+/// Returns the arc tangent in radians.
+pub fn arctan<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.atan())
+}
+
+/// Arc tangent returned in degrees.
+pub fn darctan<'gc>(ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    let Ok(angle) = arctan(ctx, arg);
+    radtodeg(ctx, angle)
 }
 
 pub fn abs<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
@@ -25,6 +80,36 @@ pub fn abs<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
 
 pub fn sqrt<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
     Ok(arg.sqrt())
+}
+
+/// Returns `e` raised to the given power.
+///
+/// Overflows to `infinity` rather than trapping.
+pub fn exp<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.exp())
+}
+
+/// Returns the natural logarithm.
+///
+/// IEEE behaviour is passed through: `ln(0)` is `-infinity` and `ln(x)` for
+/// negative `x` is NaN. See `crates/cli/tests/scripts_success/exp_ln.fml`.
+pub fn ln<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.ln())
+}
+
+/// Returns the base 2 logarithm.
+pub fn log2<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.log2())
+}
+
+/// Returns the base 10 logarithm.
+pub fn log10<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
+    Ok(arg.log10())
+}
+
+/// Returns the logarithm of `val` in the given base.
+pub fn logn<'gc>(_ctx: vm::Context<'gc>, (base, val): (f64, f64)) -> Result<f64, Infallible> {
+    Ok(val.log(base))
 }
 
 pub fn sqr<'gc>(_ctx: vm::Context<'gc>, arg: f64) -> Result<f64, Infallible> {
@@ -402,11 +487,26 @@ pub fn math_lib<'gc>(ctx: vm::Context<'gc>, lib: &mut vm::MagicSet<'gc>) {
     lib.insert_constant(ctx, "infinity", f64::INFINITY);
     lib.insert_constant(ctx, "pi", f64::consts::PI);
     lib.insert_callback(ctx, "cos", cos);
+    lib.insert_callback(ctx, "dcos", dcos);
     lib.insert_callback(ctx, "sin", sin);
+    lib.insert_callback(ctx, "dsin", dsin);
+    lib.insert_callback(ctx, "tan", tan);
+    lib.insert_callback(ctx, "dtan", dtan);
+    lib.insert_callback(ctx, "arcsin", arcsin);
+    lib.insert_callback(ctx, "darcsin", darcsin);
+    lib.insert_callback(ctx, "arccos", arccos);
+    lib.insert_callback(ctx, "darccos", darccos);
+    lib.insert_callback(ctx, "arctan", arctan);
+    lib.insert_callback(ctx, "darctan", darctan);
     lib.insert_callback(ctx, "abs", abs);
     lib.insert_callback(ctx, "sqrt", sqrt);
     lib.insert_callback(ctx, "sqr", sqr);
     lib.insert_callback(ctx, "power", power);
+    lib.insert_callback(ctx, "exp", exp);
+    lib.insert_callback(ctx, "ln", ln);
+    lib.insert_callback(ctx, "log2", log2);
+    lib.insert_callback(ctx, "log10", log10);
+    lib.insert_callback(ctx, "logn", logn);
     lib.insert_callback(ctx, "round", round);
     lib.insert_callback(ctx, "floor", floor);
     lib.insert_callback(ctx, "ceil", ceil);

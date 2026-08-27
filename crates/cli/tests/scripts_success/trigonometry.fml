@@ -1,0 +1,40 @@
+// tan / arcsin / arccos / arctan and their degree variants
+
+// radians
+assert(abs(tan(0)) < 0.000000000001);
+assert(abs(tan(pi / 4) - 1) < 0.000000000001);
+assert(abs(arcsin(1) - pi / 2) < 0.000000000001);
+assert(abs(arccos(1)) < 0.000000000001);
+assert(abs(arccos(0) - pi / 2) < 0.000000000001);
+assert(abs(arctan(1) - pi / 4) < 0.000000000001);
+
+// round trips
+assert(abs(arcsin(sin(0.7)) - 0.7) < 0.000000000001);
+assert(abs(arccos(cos(0.7)) - 0.7) < 0.000000000001);
+assert(abs(arctan(tan(0.7)) - 0.7) < 0.000000000001);
+
+// degrees: these would pass even if the conversion were inverted at 0,
+// so check values where degrees and radians disagree
+assert(abs(dsin(90) - 1) < 0.000000000001);
+assert(abs(dcos(180) + 1) < 0.000000000001);
+assert(abs(dtan(45) - 1) < 0.000000000001);
+assert(abs(darcsin(1) - 90) < 0.000000000001);
+assert(abs(darccos(0) - 90) < 0.000000000001);
+assert(abs(darctan(1) - 45) < 0.000000000001);
+
+// degree and radian forms must agree once converted
+assert(abs(dsin(30) - sin(degtorad(30))) < 0.000000000001);
+assert(abs(dcos(30) - cos(degtorad(30))) < 0.000000000001);
+assert(abs(darctan(0.5) - radtodeg(arctan(0.5))) < 0.000000000001);
+
+// domain errors are NaN, not errors
+assert(is_nan(arcsin(2)));
+assert(is_nan(arccos(-2)));
+assert(is_nan(darcsin(2)));
+assert(is_nan(darccos(2)));
+
+// arctan is bounded, unlike arcsin/arccos
+assert(abs(arctan(infinity) - pi / 2) < 0.000000000001);
+assert(abs(darctan(infinity) - 90) < 0.000000000001);
+
+return true;
