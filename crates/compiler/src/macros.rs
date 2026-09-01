@@ -98,7 +98,7 @@ impl<S> MacroSetBuilder<S> {
     ///
     /// Each macro is assigned a sequential index for identification starting from zero. Checking
     /// the current macro count can be used to determine which macros are extracted from which calls
-    /// to [`MacroSet::extract`].
+    /// to [`MacroSetBuilder::extract`].
     pub fn len(&self) -> usize {
         self.macros.len()
     }

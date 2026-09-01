@@ -29,7 +29,7 @@ pub struct LexedChunk<'gc> {
 }
 
 impl<'gc> LexedChunk<'gc> {
-    /// Lex the given chunk and produce the token stream and a `vm::Chunk` identifier.
+    /// Lex the given chunk and produce the token stream and a [`vm::Chunk`] identifier.
     pub fn lex(
         ctx: vm::Context<'gc>,
         chunk_name: impl Into<vm::SharedStr>,
