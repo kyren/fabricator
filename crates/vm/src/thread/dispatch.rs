@@ -7,7 +7,7 @@ use crate::{
     array::Array,
     closure::{Closure, Constant, HeapVar, HeapVarDescriptor},
     error::{Error, ExternValue, RuntimeError, ScriptError},
-    instructions::{self, ConstIdx, HeapIdx, IndexType as _, MagicIdx, ProtoIdx, RegIdx},
+    instructions::{self, ConstIdx, HeapIdx, MagicIdx, ProtoIdx, RegIdx},
     interpreter::Context,
     object::Object,
     string::String,

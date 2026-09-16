@@ -4,6 +4,7 @@ use fabricator_vm::LineNumber;
 /// given byte offset.
 ///
 /// Any of  "\n", "\r", "\n\r", or "\r\n" in the source string is counted as a single newline.
+#[derive(Clone)]
 pub struct LineNumbers {
     // Stores the byte offset immediately after the first character of each break.
     line_breaks: Vec<usize>,

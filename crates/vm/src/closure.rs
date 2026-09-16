@@ -5,10 +5,7 @@ use thiserror::Error;
 
 use crate::{
     debug::{Chunk, FunctionIdentifier, FunctionRef},
-    instructions::{
-        ByteCode, ConstIdx, HeapIdx, IndexType as _, InstIdx, Instruction, MagicIdx, ProtoIdx,
-        RegIdx,
-    },
+    instructions::{ByteCode, ConstIdx, HeapIdx, InstIdx, Instruction, MagicIdx, ProtoIdx, RegIdx},
     magic::MagicSet,
     object::Object,
     string::{SharedStr, String},

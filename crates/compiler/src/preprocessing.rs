@@ -1,4 +1,7 @@
+use std::hash::Hash;
+
 use fabricator_vm as vm;
+use gc_arena::Mutation;
 use thiserror::Error;
 
 use crate::{
@@ -9,7 +12,7 @@ use crate::{
     line_numbers::LineNumbers,
     macros::{MacroError, MacroSet, MacroSetBuilder, RecursiveMacro},
     parser::{ParseError, ParseSettings},
-    string_interner::VmInterner,
+    string_interner::StringInterner,
     tokens::Token,
 };
 
@@ -22,33 +25,29 @@ pub struct ChunkLexError {
     pub line_number: vm::LineNumber,
 }
 
-#[derive(Clone)]
-pub struct LexedChunk<'gc> {
-    pub chunk: vm::Chunk<'gc>,
-    pub tokens: Vec<Token<vm::String<'gc>>>,
+pub struct LexedChunk<S> {
+    pub chunk: SourceChunk,
+    pub tokens: Vec<Token<S>>,
 }
 
-impl<'gc> LexedChunk<'gc> {
+impl<S> LexedChunk<S> {
     /// Lex the given chunk and produce the token stream and a [`vm::Chunk`] identifier.
     pub fn lex(
-        ctx: vm::Context<'gc>,
+        string_interner: impl StringInterner<String = S>,
         chunk_name: impl Into<vm::SharedStr>,
         code: &str,
-    ) -> Result<LexedChunk<'gc>, ChunkLexError> {
-        let chunk = vm::Chunk::new_static(
-            &ctx,
-            SourceChunk {
-                name: chunk_name.into(),
-                line_numbers: LineNumbers::new(code),
-            },
-        );
+    ) -> Result<LexedChunk<S>, ChunkLexError> {
+        let chunk = SourceChunk {
+            name: chunk_name.into(),
+            line_numbers: LineNumbers::new(code),
+        };
 
         let mut tokens = Vec::new();
-        if let Err(error) = Lexer::tokenize(VmInterner::new(ctx), code, &mut tokens) {
-            let line_number = chunk.line_number(error.span.start());
+        if let Err(error) = Lexer::tokenize(string_interner, code, &mut tokens) {
+            let line_number = chunk.line_numbers.line(error.span.start());
             return Err(ChunkLexError {
                 error,
-                chunk_name: chunk.name().clone(),
+                chunk_name: chunk.name.clone(),
                 line_number,
             });
         }
@@ -95,39 +94,29 @@ pub struct PreprocessError {
 
 /// Extracts and resolves macros, then extracts and resolves enums, then extracts exported functions
 /// and globalvar declarations.
-pub struct Preprocessor<'gc> {
-    ctx: vm::Context<'gc>,
-    config: String,
-    external_macros: MacroSet<vm::String<'gc>>,
-    external_enums: EnumSet<vm::String<'gc>>,
-    chunk_inputs: Vec<ChunkInput<'gc>>,
+pub struct Preprocessor<S> {
+    chunk_inputs: Vec<ChunkInput<S>>,
 }
 
-impl<'gc> Preprocessor<'gc> {
-    pub fn new(
-        ctx: vm::Context<'gc>,
-        config: impl Into<String>,
-        external_macros: MacroSet<vm::String<'gc>>,
-        external_enums: EnumSet<vm::String<'gc>>,
-    ) -> Self {
+impl<S> Default for Preprocessor<S> {
+    fn default() -> Self {
         Self {
-            ctx,
-            config: config.into(),
-            external_macros,
-            external_enums,
-            chunk_inputs: Vec::new(),
+            chunk_inputs: Default::default(),
         }
     }
+}
 
+impl<S> Preprocessor<S> {
     pub fn add_chunk(
         &mut self,
+        string_interner: impl StringInterner<String = S>,
         parse_settings: ParseSettings,
         export_top_level_funcs: bool,
         chunk_name: impl Into<vm::SharedStr>,
         code: &str,
     ) -> Result<(), ChunkLexError> {
         self.add_lexed_chunk(
-            LexedChunk::lex(self.ctx, chunk_name, code)?,
+            LexedChunk::lex(string_interner, chunk_name, code)?,
             parse_settings,
             export_top_level_funcs,
         );
@@ -136,7 +125,7 @@ impl<'gc> Preprocessor<'gc> {
 
     pub fn add_lexed_chunk(
         &mut self,
-        lexed_chunk: LexedChunk<'gc>,
+        lexed_chunk: LexedChunk<S>,
         parse_settings: ParseSettings,
         export_top_level_funcs: bool,
     ) {
@@ -151,7 +140,9 @@ impl<'gc> Preprocessor<'gc> {
     pub fn chunk_len(&self) -> usize {
         self.chunk_inputs.len()
     }
+}
 
+impl<S: Eq + Hash + Clone + AsRef<str>> Preprocessor<S> {
     /// Preprocess all added chunks.
     ///
     /// The `is_special` callback is expected to return `true` when an identifier should be
@@ -164,15 +155,12 @@ impl<'gc> Preprocessor<'gc> {
     /// redefine specials.
     pub fn preprocess(
         self,
-        is_special: impl Fn(vm::String<'gc>) -> bool,
-    ) -> Result<PreprocessOutput<'gc>, PreprocessError> {
-        let Self {
-            ctx,
-            config,
-            external_macros,
-            external_enums,
-            mut chunk_inputs,
-        } = self;
+        config: S,
+        external_macros: &MacroSet<S>,
+        external_enums: &EnumSet<S>,
+        is_special: impl Fn(&S) -> bool,
+    ) -> Result<PreprocessOutput<S>, PreprocessError> {
+        let Self { mut chunk_inputs } = self;
 
         // Extract all new macro definitions from all input chunks.
 
@@ -184,10 +172,10 @@ impl<'gc> Preprocessor<'gc> {
         for input in &mut chunk_inputs {
             macro_chunk_indexes.push(macro_builder.len());
             if let Err(err) = macro_builder.extract(&mut input.tokens) {
-                let line_number = input.chunk.line_number(err.span.start());
+                let line_number = input.chunk.line_numbers.line(err.span.start());
                 return Err(PreprocessError {
                     kind: PreprocessErrorKind::Macro(err),
-                    chunk_name: input.chunk.name().clone(),
+                    chunk_name: input.chunk.name.clone(),
                     line_number,
                 });
             }
@@ -195,31 +183,29 @@ impl<'gc> Preprocessor<'gc> {
 
         // Apply the given config and resolve all macro interdependencies.
 
-        let new_macros =
-            match macro_builder.resolve_with_recursion(&ctx.intern(&config), |&token| {
-                // GMS2 doesn't expand macro tokens that match a defined macro if the token name is
-                // also a part of the stdlib. This allows re-defining builtins with macros.
-                //
-                // We do something similar here, except we skip expansion for *all* specials.
-                external_enums.find(&token).is_none() && !is_special(token)
-            }) {
-                Ok(macros) => macros,
-                Err(err) => {
-                    let macro_ = macro_builder.get(err.0).unwrap();
-                    let chunk_index = match macro_chunk_indexes.binary_search_by(|i| i.cmp(&err.0))
-                    {
-                        Ok(i) => i,
-                        Err(i) => i.checked_sub(1).unwrap(),
-                    };
-                    let chunk_input = &chunk_inputs[chunk_index];
-                    let line_number = chunk_input.chunk.line_number(macro_.span.start());
-                    return Err(PreprocessError {
-                        kind: PreprocessErrorKind::RecursiveMacro(err),
-                        chunk_name: chunk_input.chunk.name().clone(),
-                        line_number,
-                    });
-                }
-            };
+        let new_macros = match macro_builder.resolve_with_recursion(&config, |token| {
+            // GMS2 doesn't expand macro tokens that match a defined macro if the token name is
+            // also a part of the stdlib. This allows re-defining builtins with macros.
+            //
+            // We do something similar here, except we skip expansion for *all* specials.
+            external_enums.find(token).is_none() && !is_special(token)
+        }) {
+            Ok(macros) => macros,
+            Err(err) => {
+                let macro_ = macro_builder.get(err.0).unwrap();
+                let chunk_index = match macro_chunk_indexes.binary_search_by(|i| i.cmp(&err.0)) {
+                    Ok(i) => i,
+                    Err(i) => i.checked_sub(1).unwrap(),
+                };
+                let chunk_input = &chunk_inputs[chunk_index];
+                let line_number = chunk_input.chunk.line_numbers.line(macro_.span.start());
+                return Err(PreprocessError {
+                    kind: PreprocessErrorKind::RecursiveMacro(err),
+                    chunk_name: chunk_input.chunk.name.clone(),
+                    line_number,
+                });
+            }
+        };
 
         // Apply new and external macro definitions then parse the final token list in every input
         // chunk.
@@ -240,10 +226,10 @@ impl<'gc> Preprocessor<'gc> {
             external_macros.expand(&mut tokens);
 
             let block = parse_settings.parse(tokens).map_err(|e| {
-                let line_number = chunk.line_number(e.span.start());
+                let line_number = chunk.line_numbers.line(e.span.start());
                 PreprocessError {
                     kind: PreprocessErrorKind::Parsing(e),
-                    chunk_name: chunk.name().clone(),
+                    chunk_name: chunk.name.clone(),
                     line_number,
                 }
             })?;
@@ -261,10 +247,10 @@ impl<'gc> Preprocessor<'gc> {
 
         for ((block, chunk), _) in &mut preprocessing_chunks {
             if let Err(err) = external_enums.expand(block) {
-                let line_number = chunk.line_number(err.span.start());
+                let line_number = chunk.line_numbers.line(err.span.start());
                 return Err(PreprocessError {
                     kind: PreprocessErrorKind::EnumEvaluation(err),
-                    chunk_name: chunk.name().clone(),
+                    chunk_name: chunk.name.clone(),
                     line_number,
                 });
             }
@@ -273,10 +259,10 @@ impl<'gc> Preprocessor<'gc> {
             enum_chunk_indexes.push(prev_enum_len);
 
             if let Err(err) = enum_builder.extract(block) {
-                let line_number = chunk.line_number(err.span.start());
+                let line_number = chunk.line_numbers.line(err.span.start());
                 return Err(PreprocessError {
                     kind: PreprocessErrorKind::Enum(err),
-                    chunk_name: chunk.name().clone(),
+                    chunk_name: chunk.name.clone(),
                     line_number,
                 });
             }
@@ -284,15 +270,15 @@ impl<'gc> Preprocessor<'gc> {
             for i in prev_enum_len..enum_builder.len() {
                 let enum_ = enum_builder.get(i).unwrap();
                 // New enums are not allowed to shadow names of external enums or specials.
-                if external_enums.find(&enum_.name.inner).is_some() || is_special(enum_.name.inner)
+                if external_enums.find(&enum_.name.inner).is_some() || is_special(&enum_.name.inner)
                 {
-                    let line_number = chunk.line_number(enum_.span.start());
+                    let line_number = chunk.line_numbers.line(enum_.span.start());
                     return Err(PreprocessError {
                         kind: PreprocessErrorKind::ShadowsSpecial(ShadowsSpecialError {
-                            name: enum_.name.as_str().to_owned(),
+                            name: enum_.name.as_ref().to_owned(),
                             span: enum_.span,
                         }),
-                        chunk_name: chunk.name().clone(),
+                        chunk_name: chunk.name.clone(),
                         line_number,
                     });
                 }
@@ -309,10 +295,10 @@ impl<'gc> Preprocessor<'gc> {
                 Err(i) => i.checked_sub(1).unwrap(),
             };
             let (_, chunk) = &preprocessing_chunks[chunk_index].0;
-            let line_number = chunk.line_number(enum_.span.start());
+            let line_number = chunk.line_numbers.line(enum_.span.start());
             PreprocessError {
                 kind: PreprocessErrorKind::EnumResolution(err),
-                chunk_name: chunk.name().clone(),
+                chunk_name: chunk.name.clone(),
                 line_number,
             }
         })?;
@@ -321,10 +307,10 @@ impl<'gc> Preprocessor<'gc> {
 
         for ((block, chunk), _) in &mut preprocessing_chunks {
             if let Err(err) = new_enums.expand(block) {
-                let line_number = chunk.line_number(err.span.start());
+                let line_number = chunk.line_numbers.line(err.span.start());
                 return Err(PreprocessError {
                     kind: PreprocessErrorKind::EnumEvaluation(err),
-                    chunk_name: chunk.name().clone(),
+                    chunk_name: chunk.name.clone(),
                     line_number,
                 });
             }
@@ -351,10 +337,10 @@ impl<'gc> Preprocessor<'gc> {
                     export_top_level_functions: export_top_level_funcs,
                 },
             ) {
-                let line_number = chunk.line_number(err.span.start());
+                let line_number = chunk.line_numbers.line(err.span.start());
                 return Err(PreprocessError {
                     kind: PreprocessErrorKind::DuplicateExport(err),
-                    chunk_name: chunk.name().clone(),
+                    chunk_name: chunk.name.clone(),
                     line_number,
                 });
             }
@@ -367,42 +353,26 @@ impl<'gc> Preprocessor<'gc> {
                 // Exports are not allowed to shadow names of specials.
                 if external_enums.find(export_name).is_some()
                     || new_enums.find(export_name).is_some()
-                    || is_special(*export_name)
+                    || is_special(export_name)
                 {
-                    let line_number = chunk.line_number(export_span.start());
+                    let line_number = chunk.line_numbers.line(export_span.start());
                     return Err(PreprocessError {
                         kind: PreprocessErrorKind::ShadowsSpecial(ShadowsSpecialError {
-                            name: export_name.as_str().to_owned(),
+                            name: export_name.as_ref().to_owned(),
                             span: export_span,
                         }),
-                        chunk_name: chunk.name().clone(),
+                        chunk_name: chunk.name.clone(),
                         line_number,
                     });
                 }
             }
         }
 
-        // Merge macro and enum sets together and offset the chunk indexes.
-
-        let external_macros_len = external_macros.len();
-        let mut macros = external_macros;
-        macros.merge(new_macros);
-        for i in macro_chunk_indexes.iter_mut() {
-            *i += external_macros_len;
-        }
-
-        let external_enums_len = external_enums.len();
-        let mut enums = external_enums;
-        enums.merge(new_enums);
-        for i in enum_chunk_indexes.iter_mut() {
-            *i += external_enums_len;
-        }
-
         Ok(PreprocessOutput {
             preprocessed_chunks: preprocessing_chunks.into_iter().map(|(c, _)| c).collect(),
-            macros,
+            macros: new_macros,
             macro_chunk_indexes,
-            enums,
+            enums: new_enums,
             enum_chunk_indexes,
             exports,
             export_chunk_indexes,
@@ -410,19 +380,20 @@ impl<'gc> Preprocessor<'gc> {
     }
 }
 
-pub struct PreprocessOutput<'gc> {
-    pub preprocessed_chunks: Vec<(ast::Block<vm::String<'gc>>, vm::Chunk<'gc>)>,
+pub struct PreprocessOutput<S> {
+    pub preprocessed_chunks: Vec<(ast::Block<S>, SourceChunk)>,
 
-    pub macros: MacroSet<vm::String<'gc>>,
+    pub macros: MacroSet<S>,
     pub macro_chunk_indexes: Vec<usize>,
 
-    pub enums: EnumSet<vm::String<'gc>>,
+    pub enums: EnumSet<S>,
     pub enum_chunk_indexes: Vec<usize>,
 
-    pub exports: ExportSet<vm::String<'gc>>,
+    pub exports: ExportSet<S>,
     pub export_chunk_indexes: Vec<usize>,
 }
 
+#[derive(Clone)]
 pub struct SourceChunk {
     pub name: vm::SharedStr,
     pub line_numbers: LineNumbers,
@@ -438,9 +409,15 @@ impl vm::debug::ChunkData for SourceChunk {
     }
 }
 
-struct ChunkInput<'gc> {
-    chunk: vm::Chunk<'gc>,
-    tokens: Vec<Token<vm::String<'gc>>>,
+impl SourceChunk {
+    pub fn into_vm<'gc>(self, mc: &Mutation<'gc>) -> vm::Chunk<'gc> {
+        vm::Chunk::new_static(mc, self)
+    }
+}
+
+struct ChunkInput<S> {
+    chunk: SourceChunk,
+    tokens: Vec<Token<S>>,
     parse_settings: ParseSettings,
     export_top_level_funcs: bool,
 }

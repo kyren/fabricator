@@ -73,15 +73,15 @@ fn run_code(
     let interpreter = vm::Interpreter::new();
 
     interpreter.enter(|ctx| {
-        let output = compiler::Compiler::compile_chunk(
+        let (chunk_prototype, _) = compiler::compile_chunk(
             ctx,
             "default",
-            compiler::ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
+            compiler::ChunkImports::with_magic(&ctx, ctx.testing_stdlib()),
             compile_settings,
             name,
             code,
         )?;
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
 
         let thread = vm::Thread::new(&ctx);
         thread.set_hook(&ctx, VmLimiter::new());

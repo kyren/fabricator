@@ -2,12 +2,6 @@ use std::fmt;
 
 use gc_arena::Collect;
 
-pub trait IndexType {
-    type Index;
-
-    fn index(&self) -> usize;
-}
-
 macro_rules! make_idx {
     ($name:ident, $ty:ty, $prefix:literal) => {
         #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Collect)]
@@ -15,12 +9,17 @@ macro_rules! make_idx {
         #[repr(transparent)]
         pub struct $name(pub $ty);
 
-        impl IndexType for $name {
-            type Index = $ty;
-
+        impl $name {
             #[inline]
-            fn index(&self) -> usize {
+            pub fn index(&self) -> usize {
                 self.0 as usize
+            }
+        }
+
+        impl From<$ty> for $name {
+            #[inline]
+            fn from(v: $ty) -> Self {
+                Self(v)
             }
         }
 
@@ -306,7 +305,8 @@ macro_rules! define_instruction {
     ($(
         [$_category:ident] $(#[$attr:meta])* $snake_name:ident = $name:ident { $($field:ident: $field_ty:ty),* $(,)? };
     )*) => {
-        #[derive(Copy, Clone, Eq, PartialEq)]
+        #[derive(Copy, Clone, Eq, PartialEq, Collect)]
+        #[collect(require_static)]
         pub enum Instruction {
             $(
                 $(#[$attr])*

@@ -24,10 +24,10 @@ fn test_vm_call_return_hooks() {
 
         let magic = Gc::new(&ctx, magic);
 
-        let output = compiler::Compiler::compile_chunk(
+        let (chunk_prototype, _) = compiler::compile_chunk(
             ctx,
             "default",
-            compiler::ImportItems::with_magic(&ctx, magic),
+            compiler::ChunkImports::with_magic(&ctx, magic),
             compiler::CompileSettings::modern(),
             "vm hook test",
             r#"
@@ -43,7 +43,7 @@ fn test_vm_call_return_hooks() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
 
         #[derive(Collect)]
         #[collect(require_static)]
@@ -115,10 +115,10 @@ fn test_vm_return_hook_on_error() {
     let interpreter = vm::Interpreter::new();
 
     interpreter.enter(|ctx| {
-        let output = compiler::Compiler::compile_chunk(
+        let (chunk_prototype, _) = compiler::compile_chunk(
             ctx,
             "default",
-            compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
+            compiler::ChunkImports::with_magic(&ctx, ctx.stdlib()),
             compiler::CompileSettings::modern(),
             "vm hook test",
             r#"
@@ -134,7 +134,7 @@ fn test_vm_return_hook_on_error() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
 
         #[derive(Collect)]
         #[collect(require_static)]
@@ -200,10 +200,10 @@ fn test_vm_call_return_hook_count_with_error() {
 
         let magic = Gc::new(&ctx, magic);
 
-        let output = compiler::Compiler::compile_chunk(
+        let (chunk_prototype, _) = compiler::compile_chunk(
             ctx,
             "default",
-            compiler::ImportItems::with_magic(&ctx, magic),
+            compiler::ChunkImports::with_magic(&ctx, magic),
             compiler::CompileSettings::modern(),
             "vm hook test",
             r#"
@@ -219,7 +219,7 @@ fn test_vm_call_return_hook_count_with_error() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
 
         #[derive(Debug)]
         struct NoCallbacksAllowed;
@@ -285,10 +285,10 @@ fn test_vm_step_hook() {
     let interpreter = vm::Interpreter::new();
 
     interpreter.enter(|ctx| {
-        let output = compiler::Compiler::compile_chunk(
+        let (chunk_prototype, _) = compiler::compile_chunk(
             ctx,
             "default",
-            compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
+            compiler::ChunkImports::with_magic(&ctx, ctx.stdlib()),
             compiler::CompileSettings::modern(),
             "vm hook test",
             r#"
@@ -302,7 +302,7 @@ fn test_vm_step_hook() {
             "#,
         )
         .unwrap();
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
 
         #[derive(Debug)]
         struct ExecLimitError;

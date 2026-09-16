@@ -557,14 +557,9 @@ fn load_scripts(
             }
         }
 
-        let magic = Gc::new(&ctx, magic);
-
         log::info!("compiling all global scripts...");
-        let mut script_compiler = compiler::Compiler::new(
-            ctx,
-            config_name,
-            compiler::ImportItems::with_magic(&ctx, magic),
-        );
+        let mut script_compiler =
+            compiler::frontend::Compiler::new(compiler::string_interner::VmInterner::new(ctx));
 
         let mut scripts = project.scripts.values().collect::<Vec<_>>();
 
@@ -580,33 +575,55 @@ fn load_scripts(
                     ScriptMode::Compat => compiler::CompileSettings::compat(),
                     ScriptMode::Modern => compiler::CompileSettings::modern(),
                 },
-                script.path.to_string_lossy().into_owned(),
+                script.path.to_string_lossy().as_ref(),
                 &code_buf,
             )?;
         }
 
-        let script_output = script_compiler.compile()?;
+        let script_output = script_compiler.compile(
+            ctx.intern(config_name),
+            &Default::default(),
+            &Default::default(),
+            |&ident| {
+                if let Some(idx) = magic.find(ident) {
+                    Some(compiler::frontend::ExternalVarMode::Magic {
+                        is_read_only: magic.get(idx).unwrap().read_only(),
+                    })
+                } else {
+                    None
+                }
+            },
+        )?;
+
+        let (magic, script_prototypes) = script_output.vm_prototypes(ctx, magic).unwrap();
         log::info!("finished compiling all global scripts!");
 
         log::info!("compiling all object scripts...");
+        let macros = Gc::new(&ctx, script_output.macros);
+        let enums = Gc::new(&ctx, script_output.enums);
+        let global_vars = Gc::new(&ctx, script_output.global_vars);
+
         for (object_name, proj_object) in &project.objects {
             for (&event, script) in &proj_object.event_scripts {
                 code_buf.clear();
                 File::open(&script.path)?.read_to_string(&mut code_buf)?;
-                let name = script.path.to_string_lossy();
-                let proto_output = compiler::Compiler::compile_chunk(
+                let (proto, _) = compiler::compile_chunk(
                     ctx,
                     config_name,
-                    script_output.exported_imports,
+                    compiler::ChunkImports {
+                        macros,
+                        enums,
+                        global_vars,
+                        magic,
+                    },
                     match script.mode {
                         ScriptMode::Compat => compiler::CompileSettings::compat(),
                         ScriptMode::Modern => compiler::CompileSettings::modern(),
                     }
                     .export_top_level_functions(false),
-                    name.into_owned(),
+                    script.path.to_string_lossy().as_ref(),
                     &code_buf,
                 )?;
-                let proto = proto_output.chunk_prototype;
                 object_events
                     .entry(config.object_dict[object_name])
                     .or_default()
@@ -619,8 +636,7 @@ fn load_scripts(
         log::info!("finished compiling all object scripts!");
 
         Ok(Scripts {
-            scripts: script_output
-                .chunks
+            scripts: script_prototypes
                 .into_iter()
                 .map(|proto| {
                     ctx.stash(vm::Closure::new(&ctx, proto, vm::Value::Undefined).unwrap())

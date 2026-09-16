@@ -6,11 +6,11 @@ pub trait StringInterner {
     fn intern(&mut self, s: &str) -> Self::String;
 }
 
-impl<S, F: FnMut(&str) -> S> StringInterner for F {
-    type String = S;
+impl<'a, S: StringInterner> StringInterner for &'a mut S {
+    type String = S::String;
 
     fn intern(&mut self, s: &str) -> Self::String {
-        (self)(s)
+        (*self).intern(s)
     }
 }
 

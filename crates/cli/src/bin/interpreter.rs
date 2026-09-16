@@ -4,9 +4,10 @@ use anyhow::Error;
 use clap::{Parser, Subcommand};
 use fabricator_cli::TestingStdlibContext as _;
 use fabricator_compiler::{
-    CompileError, CompileSettings,
-    compiler::{CompileErrorKind, Compiler, ImportItems},
+    chunk_compiler::{ChunkImports, compile_chunk},
+    frontend::{CompileError, CompileErrorKind, CompileSettings, Compiler, ExternalVarMode},
     parser::{ParseError, ParseErrorKind},
+    string_interner::VmInterner,
 };
 use fabricator_stdlib::string::debug_value;
 use fabricator_vm as vm;
@@ -37,16 +38,16 @@ fn main() -> Result<ExitCode, Error> {
             let settings = CompileSettings::from_path(&path).set_optimization_passes(cli.opt_level);
 
             interpreter.enter(|ctx| {
-                let output = Compiler::compile_chunk(
+                let (chunk_prototype, _) = compile_chunk(
                     ctx,
                     "",
-                    ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
+                    ChunkImports::with_magic(&ctx, ctx.testing_stdlib()),
                     settings,
-                    path.to_string_lossy().into_owned(),
+                    path.to_string_lossy().as_ref(),
                     &code,
                 )?;
                 let closure =
-                    vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+                    vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
 
                 let thread = vm::Thread::new(&ctx);
                 Ok(match thread.run(ctx, closure) {
@@ -65,37 +66,62 @@ fn main() -> Result<ExitCode, Error> {
             let settings = CompileSettings::from_path(&path).set_optimization_passes(cli.opt_level);
 
             interpreter.enter(|ctx| {
-                let output = Compiler::compile_chunk(
-                    ctx,
-                    "",
-                    ImportItems::with_magic(&ctx, ctx.testing_stdlib()),
-                    settings,
-                    path.to_string_lossy().into_owned(),
-                    &code,
+                let testing_stdlib = ctx.testing_stdlib();
+
+                let mut compiler = Compiler::new(VmInterner::new(ctx));
+                compiler.add_chunk(settings, path.to_string_lossy().as_ref(), &code)?;
+                let output = compiler.compile(
+                    ctx.intern(""),
+                    &Default::default(),
+                    &Default::default(),
+                    |&s| {
+                        if let Some(idx) = testing_stdlib.find(s) {
+                            Some(ExternalVarMode::Magic {
+                                is_read_only: testing_stdlib.get(idx).unwrap().read_only(),
+                            })
+                        } else {
+                            None
+                        }
+                    },
                 )?;
 
-                for (ir, proto) in output.all_prototypes {
-                    let chunk = proto.chunk();
-                    match proto.reference() {
+                println!("==[Magic Vars]==");
+                for (i, magic_name) in output.magic_vars.iter().enumerate() {
+                    println!("{i}: {magic_name:?}");
+                }
+                println!();
+
+                for function in output
+                    .exported_functions
+                    .values()
+                    .chain(output.chunks.iter().map(|(_, o)| o))
+                {
+                    match function.prototype.reference {
                         vm::FunctionRef::Named(ref_name, span) => {
                             println!(
                                 "==[Function named {ref_name} at line {}]==",
-                                chunk.line_number(span.start())
+                                output.chunks[function.chunk_index]
+                                    .0
+                                    .line_numbers
+                                    .line(span.start())
                             );
                         }
                         vm::FunctionRef::Expression(span) => {
                             println!(
                                 "==[Function expression at line {}]==",
-                                chunk.line_number(span.start())
+                                output.chunks[function.chunk_index]
+                                    .0
+                                    .line_numbers
+                                    .line(span.start())
                             );
                         }
                         vm::FunctionRef::Chunk => {
                             println!("==[Chunk function]==");
                         }
                     }
+                    println!("IR: {:#?}", function.ir);
+                    println!("Bytecode: {:#?}", function.prototype);
                     println!();
-                    println!("IR: {:#?}", ir);
-                    println!("Bytecode: {:#?}", proto);
                 }
                 Ok(ExitCode::SUCCESS)
             })
@@ -107,7 +133,7 @@ fn main() -> Result<ExitCode, Error> {
             let settings = CompileSettings::modern().set_optimization_passes(cli.opt_level);
 
             let mut imports = interpreter
-                .enter(|ctx| ctx.stash(ImportItems::with_magic(&ctx, ctx.testing_stdlib())));
+                .enter(|ctx| ctx.stash(ChunkImports::with_magic(&ctx, ctx.testing_stdlib())));
 
             fn is_end_of_stream_err(e: &CompileError) -> bool {
                 matches!(
@@ -139,7 +165,7 @@ fn main() -> Result<ExitCode, Error> {
                         }
 
                         let try_compile = |code: &str| {
-                            Compiler::compile_chunk(
+                            compile_chunk(
                                 ctx,
                                 "",
                                 ctx.fetch(&imports),
@@ -154,15 +180,12 @@ fn main() -> Result<ExitCode, Error> {
                             .or_else(|_| try_compile(&format!("{line};")));
 
                         match compile_res {
-                            Ok(output) => {
-                                imports = ctx.stash(output.exported_imports);
+                            Ok((chunk_prototype, exports)) => {
+                                imports = ctx.stash(exports);
 
-                                let closure = vm::Closure::new(
-                                    &ctx,
-                                    output.chunk_prototype,
-                                    vm::Value::Undefined,
-                                )
-                                .unwrap();
+                                let closure =
+                                    vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined)
+                                        .unwrap();
 
                                 let thread = ctx.fetch(&thread);
                                 thread.exec(ctx, |mut exec| {

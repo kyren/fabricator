@@ -1,4 +1,7 @@
-use fabricator_vm::{self as vm, closure, instructions::HeapIdx};
+use fabricator_vm::{
+    self as vm, closure,
+    instructions::{HeapIdx, Instruction, MagicIdx},
+};
 use gc_arena::{Collect, Gc, Mutation};
 
 use crate::constant::Constant;
@@ -39,7 +42,7 @@ impl<S> HeapVarDescriptor<S> {
 ///
 /// This is distinct from a VM prototype in that it may not use VM interned strings, does not store
 /// child prototypes as a `Gc` pointer, and does not have a reference to a concrete `MagicSet`.
-#[derive(Debug, Clone, Collect)]
+#[derive(Debug, Collect)]
 #[collect(no_drop)]
 pub struct Prototype<S> {
     pub reference: vm::FunctionRef<S>,
@@ -49,28 +52,70 @@ pub struct Prototype<S> {
     pub heap_vars: Box<[HeapVarDescriptor<S>]>,
 }
 
+impl<S: Clone> Clone for Prototype<S> {
+    fn clone(&self) -> Self {
+        self.clone_with_map_string(|s| s.clone())
+    }
+}
+
 impl<S> Prototype<S> {
-    pub fn map_string<S2>(self, map: impl Fn(S) -> S2) -> Prototype<S2> {
-        let Self {
-            reference,
-            bytecode,
-            constants,
-            prototypes,
-            heap_vars,
-        } = self;
+    pub fn clone_with_map_string<S2>(&self, map: impl Fn(&S) -> S2) -> Prototype<S2> {
+        fn do_clone<S, S2>(this: &Prototype<S>, map: &impl Fn(&S) -> S2) -> Prototype<S2> {
+            let reference = this.reference.as_string_ref().map_string(map);
+            let constants = this
+                .constants
+                .iter()
+                .map(|c| c.as_string_ref().map_string(map))
+                .collect();
+            let prototypes = this.prototypes.iter().map(|p| do_clone(p, map)).collect();
+            let heap_vars = this
+                .heap_vars
+                .iter()
+                .map(|h| h.as_string_ref().map_string(map))
+                .collect();
 
-        let reference = reference.map_string(&map);
-        let constants = constants.into_iter().map(|c| c.map_string(&map)).collect();
-        let prototypes = prototypes.into_iter().map(|p| p.map_string(&map)).collect();
-        let heap_vars = heap_vars.into_iter().map(|h| h.map_string(&map)).collect();
-
-        Prototype {
-            reference,
-            bytecode,
-            constants,
-            prototypes,
-            heap_vars,
+            Prototype {
+                reference,
+                bytecode: this.bytecode.clone(),
+                constants,
+                prototypes,
+                heap_vars,
+            }
         }
+
+        do_clone(self, &map)
+    }
+
+    pub fn map_magic_idx(self, map: impl Fn(MagicIdx) -> MagicIdx) -> Self {
+        fn do_map<S>(this: Prototype<S>, map: &impl Fn(MagicIdx) -> MagicIdx) -> Prototype<S> {
+            Prototype {
+                reference: this.reference,
+                bytecode: vm::ByteCode::encode(this.bytecode.decode().map(|(inst, span)| {
+                    let inst = match inst {
+                        Instruction::GetMagic { dest, magic } => Instruction::GetMagic {
+                            dest,
+                            magic: map(magic),
+                        },
+                        Instruction::SetMagic { magic, source } => Instruction::SetMagic {
+                            magic: map(magic),
+                            source,
+                        },
+                        inst => inst,
+                    };
+                    (inst, span)
+                }))
+                .unwrap(),
+                constants: this.constants,
+                prototypes: this
+                    .prototypes
+                    .into_iter()
+                    .map(|p| do_map(p, map))
+                    .collect(),
+                heap_vars: this.heap_vars,
+            }
+        }
+
+        do_map(self, &map)
     }
 }
 

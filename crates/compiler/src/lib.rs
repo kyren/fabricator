@@ -1,10 +1,11 @@
 pub mod analysis;
 pub mod ast;
+pub mod chunk_compiler;
 pub mod code_gen;
-pub mod compiler;
 pub mod constant;
 pub mod enums;
 pub mod exports;
+pub mod frontend;
 pub mod graph;
 pub mod ir;
 pub mod ir_gen;
@@ -16,4 +17,7 @@ pub mod preprocessing;
 pub mod string_interner;
 pub mod tokens;
 
-pub use self::compiler::{CompileError, CompileSettings, Compiler, ImportItems};
+pub use self::{
+    chunk_compiler::{ChunkImports, ChunkOutput, StashedChunkImports, compile_chunk},
+    frontend::{CompileError, CompileSettings},
+};

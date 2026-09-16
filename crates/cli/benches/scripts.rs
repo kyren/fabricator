@@ -12,16 +12,16 @@ fn benchmark_script(c: &mut Criterion, name: &str, code: &str) {
     let mut interpreter = vm::Interpreter::new();
 
     let (thread, closure) = interpreter.enter(|ctx| {
-        let output = compiler::Compiler::compile_chunk(
+        let (chunk_prototype, _) = compiler::compile_chunk(
             ctx,
             "default",
-            compiler::ImportItems::with_magic(&ctx, ctx.stdlib()),
+            compiler::ChunkImports::with_magic(&ctx, ctx.stdlib()),
             compiler::CompileSettings::modern(),
             name,
             code,
         )
         .expect("compile error");
-        let closure = vm::Closure::new(&ctx, output.chunk_prototype, vm::Value::Undefined).unwrap();
+        let closure = vm::Closure::new(&ctx, chunk_prototype, vm::Value::Undefined).unwrap();
 
         let thread = vm::Thread::new(&ctx);
         (ctx.stash(thread), ctx.stash(closure))

@@ -28,14 +28,14 @@ use crate::{
 /// May panic if the provided IR is not well-formed.
 pub fn gen_prototype<S: Clone + Eq + Hash>(
     ir: &ir::Function<S>,
-    magic_index: impl Fn(&S) -> Option<usize>,
+    mut magic_index: impl FnMut(&S) -> Option<usize>,
 ) -> Result<Prototype<S>, ProtoGenError> {
-    codegen_function(ir, &magic_index, &SecondaryMap::new())
+    codegen_function(ir, &mut magic_index, &SecondaryMap::new())
 }
 
 fn codegen_function<S: Clone + Eq + Hash>(
     ir: &ir::Function<S>,
-    magic_index: &impl Fn(&S) -> Option<usize>,
+    magic_index: &mut impl FnMut(&S) -> Option<usize>,
     parent_heap_indexes: &SecondaryMap<ir::VarId, instructions::HeapIdx>,
 ) -> Result<Prototype<S>, ProtoGenError> {
     let instruction_liveness = InstructionLiveness::compute(ir).unwrap();
