@@ -1,0 +1,35 @@
+// exp / ln / log2 / log10 / logn
+
+assert(exp(0) == 1);
+assert(abs(exp(1) - 2.718281828459045) < 0.000000000001);
+assert(abs(ln(exp(3.7)) - 3.7) < 0.000000000001);
+assert(abs(ln(1)) < 0.000000000001);
+
+// the gaussian weight a separable blur kernel needs
+assert(abs(exp(-2) - 0.1353352832366127) < 0.000000000001);
+
+assert(log2(1024) == 10);
+assert(log10(1000) == 3);
+assert(abs(logn(2, 1024) - 10) < 0.000000000001);
+assert(abs(logn(10, 1000) - 3) < 0.000000000001);
+
+// logn takes the base first, so it is not symmetric
+assert(abs(logn(2, 8) - 3) < 0.000000000001);
+assert(abs(logn(8, 2) - 0.3333333333333333) < 0.000000000001);
+
+// IEEE behaviour is passed through rather than clamped or errored
+assert(ln(0) == -infinity);
+assert(log2(0) == -infinity);
+assert(log10(0) == -infinity);
+assert(is_nan(ln(-1)));
+assert(is_nan(log2(-1)));
+assert(is_nan(log10(-1)));
+assert(exp(-infinity) == 0);
+assert(exp(infinity) == infinity);
+assert(is_nan(exp(NaN)));
+assert(is_nan(ln(NaN)));
+
+// exp overflows to infinity rather than trapping
+assert(exp(1000) == infinity);
+
+return true;
