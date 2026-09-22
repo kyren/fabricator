@@ -790,6 +790,7 @@ dependencies = [
  "fabricator-vm",
  "gc-arena",
  "rustc-hash 2.1.2",
+ "serde",
  "thiserror 2.0.18",
 ]
 

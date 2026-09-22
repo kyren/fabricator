@@ -31,7 +31,7 @@ use crate::{
         verify_references::{ReferenceVerificationError, verify_references},
         verify_upvars::{UpVarVerificationError, verify_no_root_upvars, verify_upvars},
     },
-    code_gen::{Prototype, gen_prototype},
+    code_gen::{Prototype, VmPrototypeError, gen_prototype},
     enums::{EnumError, EnumEvaluationError, EnumResolutionError, EnumSet},
     exports::{DuplicateExportError, Export},
     ir,
@@ -43,7 +43,7 @@ use crate::{
         ChunkLexError, LexedChunk, PreprocessError, PreprocessErrorKind, PreprocessOutput,
         Preprocessor, ShadowsSpecialError, SourceChunk,
     },
-    string_interner::StringInterner,
+    string_interner::{StdStringInterner, StringInterner},
 };
 
 #[derive(Debug, Error)]
@@ -192,20 +192,26 @@ pub struct Compiler<S, I> {
     ir_compile_settings: Vec<IrCompileSettings>,
 }
 
+impl Compiler<String, StdStringInterner> {
+    /// Create a new instance of the `Compiler` for compiling a single compilation unit.
+    pub fn new() -> Self {
+        let preprocessor = Preprocessor::default();
+        Self {
+            preprocessor,
+            string_interner: StdStringInterner,
+            ir_compile_settings: Vec::new(),
+        }
+    }
+}
+
 impl<S, I> Compiler<S, I>
 where
     S: Eq + Hash + Clone + AsRef<str>,
     I: StringInterner<String = S>,
 {
-    /// Create a new instance of the `Compiler` for compiling a single compilation unit.
-    ///
-    /// The provided `macros` and `enums` are assumed to be externally defined and will be available
-    /// to all compiled chunks and are merged into the final macros and enums output.
-    ///
-    /// The provided `external_var_mode` predicate will be used to determine if unknown references
-    /// to free variables should be interpreted as either externally defined global variables or
-    /// magic variables.
-    pub fn new(string_interner: I) -> Self {
+    /// Create a new instance of the `Compiler` for compiling a single compilation unit with the
+    /// provided string interner.
+    pub fn with_interner(string_interner: I) -> Self {
         let preprocessor = Preprocessor::default();
         Self {
             preprocessor,
@@ -255,6 +261,14 @@ where
         self.preprocessor.chunk_len()
     }
 
+    /// Compile all added chunks as a single compilation unit.
+    ///
+    /// The provided `macros` and `enums` are assumed to be externally defined and will be available
+    /// to all compiled chunks.
+    ///
+    /// The provided `external_var_mode` predicate will be used to determine if unknown references
+    /// to free variables should be interpreted as either externally defined global variables or
+    /// magic variables.
     pub fn compile(
         self,
         config: S,
@@ -393,11 +407,7 @@ where
 
                 exported_functions.insert(
                     func_stmt.name.inner.clone(),
-                    FunctionOutput {
-                        chunk_index,
-                        ir,
-                        prototype,
-                    },
+                    (FunctionOutput { ir, prototype }, chunk_index),
                 );
             }
         }
@@ -427,11 +437,7 @@ where
                 })?;
 
             let prototype = optimize_and_generate_proto(compile_settings, &mut ir);
-            let func_output = FunctionOutput {
-                chunk_index: chunks.len(),
-                ir,
-                prototype,
-            };
+            let func_output = FunctionOutput { ir, prototype };
             chunks.push((chunk, func_output));
         }
 
@@ -446,10 +452,9 @@ where
     }
 }
 
-/// The compiler output for a single top-level function.
+/// The compiler output for a single function export.
+#[derive(Clone)]
 pub struct FunctionOutput<S> {
-    /// The index for the source chunk which defines this function.
-    pub chunk_index: usize,
     /// IR for the function *after* any optimization.
     pub ir: ir::Function<S>,
     /// Prototype generated from the IR.
@@ -457,6 +462,7 @@ pub struct FunctionOutput<S> {
 }
 
 /// All output from a single compilation unit.
+#[derive(Clone)]
 pub struct CompileOutput<S> {
     pub macros: MacroSet<S>,
     pub enums: EnumSet<S>,
@@ -469,43 +475,110 @@ pub struct CompileOutput<S> {
 
     /// Contains all top-level function exports in this compilation unit. All references to any
     /// exported function are always interpreted as references to magic variables.
-    pub exported_functions: FxHashMap<S, FunctionOutput<S>>,
+    ///
+    /// The key type is a pair of the [`FunctionOutput`] for this export plus the index for its
+    /// source chunk.
+    pub exported_functions: FxHashMap<S, (FunctionOutput<S>, usize)>,
 
     /// A pair of the chunk identifier and function output per input chunk, in the order provided to
     /// the [`Compiler`].
     pub chunks: Vec<(SourceChunk, FunctionOutput<S>)>,
 }
 
-#[derive(Debug, Error)]
-#[error("prototype references magic var {0:?} which is not in the extern lib or function exports")]
-pub struct MissingMagicVar(vm::SharedStr);
+impl<S: Clone> CompileOutput<S> {
+    /// Strip the compiler output to contain only the final function prototypes.
+    pub fn prototypes(&self) -> PrototypeOutput<S> {
+        PrototypeOutput {
+            magic_vars: self.magic_vars.clone(),
+            exported_functions: self
+                .exported_functions
+                .iter()
+                .map(|(name, &(ref func, chunk_index))| {
+                    (name.clone(), func.prototype.clone(), chunk_index)
+                })
+                .collect(),
+            chunks: self
+                .chunks
+                .iter()
+                .map(|(chunk, func)| (chunk.clone(), func.prototype.clone()))
+                .collect(),
+        }
+    }
+}
 
-impl<S> CompileOutput<S> {
-    /// A version of [`CompileOutput::vm_prototypes`] which allows converting string types to the
-    /// required [`vm::String`].
-    pub fn vm_prototypes_with_strings<'gc>(
-        &self,
+/// A minimal version of [`CompileOutput`] that contains only the minimal information to produce
+/// executable prototypes.
+///
+/// Implements [`serde::Serialize`] and [`serde::Deserialize`] to enable caching of compiler output.
+#[derive(Clone)]
+pub struct PrototypeOutput<S> {
+    pub magic_vars: Vec<S>,
+    pub exported_functions: Vec<(S, Prototype<S>, usize)>,
+    pub chunks: Vec<(SourceChunk, Prototype<S>)>,
+}
+
+impl<S> PrototypeOutput<S> {
+    pub fn map_string<S2>(self, map: impl Fn(S) -> S2) -> PrototypeOutput<S2> {
+        PrototypeOutput {
+            magic_vars: self.magic_vars.into_iter().map(&map).collect(),
+            exported_functions: self
+                .exported_functions
+                .into_iter()
+                .map(|(name, proto, chunk_index)| (map(name), proto.map_string(&map), chunk_index))
+                .collect(),
+            chunks: self
+                .chunks
+                .into_iter()
+                .map(|(chunk, proto)| (chunk, proto.map_string(&map)))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum VmOutputError {
+    #[error(
+        "prototype references magic var {0:?} which is not in the extern lib or function exports"
+    )]
+    MissingMagicVar(vm::SharedStr),
+    #[error("magic value index is too large")]
+    MagicIndexOverflow,
+    #[error("chunk index does not refer to a valid chunk")]
+    BadChunkIdx,
+    #[error("MagicIdx has no corresponding entry in `magic_vars`")]
+    MissingMagicName,
+    #[error("{0}")]
+    PrototypeVerificationError(#[from] VmPrototypeError),
+}
+
+impl<'gc> PrototypeOutput<vm::String<'gc>> {
+    /// Convert prototype output into a set of [`vm::Prototype`]s.
+    ///
+    /// A new [`vm::MagicSet`] is created which merges all exported functions on top of the
+    /// provided external `MagicSet`. This new `MagicSet` will become the one used for every new
+    /// `vm::Prototype`.
+    ///
+    /// Returns a [`VmOutputError::MissingMagicVar`] error if the provided `extern_lib` does not
+    /// contain a magic variable with a name that was declared as magic during compilation.
+    ///
+    /// Returns a [`VmOutputError::MagicIndexOverflow`] error if the combined set of magic variables
+    /// would overflow `MagicIdx`.
+    ///
+    /// Returns other error types only when `PrototypeOutput` has been externally modified after
+    /// compilation.
+    pub fn into_vm(
+        self,
         ctx: vm::Context<'gc>,
         extern_lib: vm::MagicSet<'gc>,
-        into_vm_string: impl Fn(&S) -> vm::String<'gc>,
-    ) -> Result<(Gc<'gc, vm::MagicSet<'gc>>, Vec<Gc<'gc, vm::Prototype<'gc>>>), MissingMagicVar>
-    {
+    ) -> Result<(Gc<'gc, vm::MagicSet<'gc>>, Vec<Gc<'gc, vm::Prototype<'gc>>>), VmOutputError> {
         let mut new_magic = extern_lib;
 
-        // Gather all chunk descriptors
+        // Convert `SourceChunk`s into VM chunk descriptors.
 
         let chunks = self
             .chunks
-            .iter()
-            .map(|(chunk, _)| chunk.clone().into_vm(&ctx))
-            .collect::<Vec<_>>();
-
-        // Gather all magic variable names
-
-        let magic_vars = self
-            .magic_vars
-            .iter()
-            .map(&into_vm_string)
+            .into_iter()
+            .map(|(chunk, proto)| (chunk.into_vm(&ctx), proto))
             .collect::<Vec<_>>();
 
         // Insert a read-only *stub* magic variable for each function export
@@ -514,8 +587,8 @@ impl<S> CompileOutput<S> {
 
         let stub_magic = vm::MagicConstant::new_ptr(&ctx, vm::Value::Undefined);
 
-        for (i, name) in self.exported_functions.keys().enumerate() {
-            let index = new_magic.insert(into_vm_string(name), stub_magic).0;
+        for (i, &(name, _, _)) in self.exported_functions.iter().enumerate() {
+            let index = new_magic.insert(name, stub_magic).0;
             exported_function_magic_indexes.insert(i, index);
         }
 
@@ -524,21 +597,26 @@ impl<S> CompileOutput<S> {
         let new_magic = Gc::new(&ctx, new_magic);
         let magic_write = Gc::write(&ctx, new_magic);
 
-        for (i, output) in self.exported_functions.values().enumerate() {
+        for (i, (_, proto, chunk_index)) in self.exported_functions.into_iter().enumerate() {
             let magic_index = exported_function_magic_indexes[i];
 
-            let proto = output
-                .prototype
-                .clone_with_map_string(&into_vm_string)
-                .map_magic_idx(|idx| {
-                    new_magic
-                        .find(magic_vars[idx.index()])
-                        .unwrap()
-                        .try_into()
-                        .unwrap()
-                });
+            let proto = proto.try_map_magic_idx::<VmOutputError>(|idx| {
+                let name = *self
+                    .magic_vars
+                    .get(idx.index())
+                    .ok_or(VmOutputError::MissingMagicName)?;
+                Ok(new_magic
+                    .find(name)
+                    .ok_or_else(|| VmOutputError::MissingMagicVar(name.as_shared().clone()))?
+                    .try_into()
+                    .map_err(|_| VmOutputError::MagicIndexOverflow)?)
+            })?;
 
-            let vm_proto = proto.into_vm(&ctx, chunks[output.chunk_index], new_magic);
+            let vm_proto = proto.into_vm(
+                &ctx,
+                chunks.get(chunk_index).ok_or(VmOutputError::BadChunkIdx)?.0,
+                new_magic,
+            )?;
             let closure = vm::Closure::new(&ctx, vm_proto, vm::Value::Undefined).unwrap();
 
             vm::MagicSet::replace(
@@ -553,45 +631,23 @@ impl<S> CompileOutput<S> {
 
         let mut chunk_prototypes = Vec::new();
 
-        for (_, output) in &self.chunks {
-            let proto = output
-                .prototype
-                .clone_with_map_string(&into_vm_string)
-                .map_magic_idx(|idx| {
-                    new_magic
-                        .find(magic_vars[idx.index()])
-                        .unwrap()
-                        .try_into()
-                        .unwrap()
-                });
-            let vm_proto = proto.into_vm(&ctx, chunks[output.chunk_index], new_magic);
+        for (chunk, proto) in chunks {
+            let proto = proto.try_map_magic_idx::<VmOutputError>(|idx| {
+                let name = *self
+                    .magic_vars
+                    .get(idx.index())
+                    .ok_or(VmOutputError::MissingMagicName)?;
+                Ok(new_magic
+                    .find(name)
+                    .ok_or_else(|| VmOutputError::MissingMagicVar(name.as_shared().clone()))?
+                    .try_into()
+                    .map_err(|_| VmOutputError::MagicIndexOverflow)?)
+            })?;
+            let vm_proto = proto.into_vm(&ctx, chunk, new_magic)?;
             chunk_prototypes.push(vm_proto);
         }
 
         Ok((new_magic, chunk_prototypes))
-    }
-}
-
-impl<'gc> CompileOutput<vm::String<'gc>> {
-    /// Convert compiler output into a set of [`vm::Prototype`]s.
-    ///
-    /// A new [`vm::MagicSet`] is created which merges all exported functions on top of the
-    /// provided external `MagicSet`. This new `MagicSet` will become the one used for every new
-    /// `vm::Prototype`.
-    ///
-    /// Returns a [`MissingMagicVar`] error if the provided `extern_lib` does not contain a magic
-    /// variable with a name that was declared as magic during compilation.
-    ///
-    /// # Panics
-    ///
-    /// May panic if stored data was externally modified after compilation.
-    pub fn vm_prototypes(
-        &self,
-        ctx: vm::Context<'gc>,
-        extern_lib: vm::MagicSet<'gc>,
-    ) -> Result<(Gc<'gc, vm::MagicSet<'gc>>, Vec<Gc<'gc, vm::Prototype<'gc>>>), MissingMagicVar>
-    {
-        self.vm_prototypes_with_strings(ctx, extern_lib, |s| *s)
     }
 }
 

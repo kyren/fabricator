@@ -17,13 +17,8 @@ pub struct Span {
 
 impl Span {
     /// Create a new `Span`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `start` is not less than or equal to `end`.
     #[must_use]
     pub fn new(start: usize, end: usize) -> Self {
-        assert!(start <= end);
         Self { start, end }
     }
 

@@ -558,8 +558,9 @@ fn load_scripts(
         }
 
         log::info!("compiling all global scripts...");
-        let mut script_compiler =
-            compiler::frontend::Compiler::new(compiler::string_interner::VmInterner::new(ctx));
+        let mut script_compiler = compiler::frontend::Compiler::with_interner(
+            compiler::string_interner::VmInterner::new(ctx),
+        );
 
         let mut scripts = project.scripts.values().collect::<Vec<_>>();
 
@@ -595,7 +596,7 @@ fn load_scripts(
             },
         )?;
 
-        let (magic, script_prototypes) = script_output.vm_prototypes(ctx, magic).unwrap();
+        let (magic, script_prototypes) = script_output.prototypes().into_vm(ctx, magic).unwrap();
         log::info!("finished compiling all global scripts!");
 
         log::info!("compiling all object scripts...");

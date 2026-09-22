@@ -73,7 +73,7 @@ pub fn compile_chunk<'gc>(
     chunk_name: &str,
     code: &str,
 ) -> Result<(Gc<'gc, vm::Prototype<'gc>>, ChunkImports<'gc>), CompileError> {
-    let mut compiler = Compiler::new(VmInterner::new(ctx));
+    let mut compiler = Compiler::with_interner(VmInterner::new(ctx));
 
     compiler.add_chunk(compile_settings, chunk_name, code)?;
     let output = compiler.compile(ctx.intern(config), &imports.macros, &imports.enums, |&s| {
@@ -88,7 +88,10 @@ pub fn compile_chunk<'gc>(
         }
     })?;
 
-    let (magic, mut chunk_protos) = output.vm_prototypes(ctx, (*imports.magic).clone()).unwrap();
+    let (magic, mut chunk_protos) = output
+        .prototypes()
+        .into_vm(ctx, (*imports.magic).clone())
+        .unwrap();
     assert_eq!(chunk_protos.len(), 1);
     let chunk_proto = chunk_protos.remove(0);
 
@@ -99,7 +102,7 @@ pub fn compile_chunk<'gc>(
     enums.merge(output.enums);
 
     let mut global_vars = (*imports.global_vars).clone();
-    global_vars.extend(output.global_vars.iter().cloned());
+    global_vars.extend(output.global_vars.iter().copied());
 
     let exported_imports = ChunkImports {
         macros: Gc::new(&ctx, macros),

@@ -68,7 +68,7 @@ fn main() -> Result<ExitCode, Error> {
             interpreter.enter(|ctx| {
                 let testing_stdlib = ctx.testing_stdlib();
 
-                let mut compiler = Compiler::new(VmInterner::new(ctx));
+                let mut compiler = Compiler::with_interner(VmInterner::new(ctx));
                 compiler.add_chunk(settings, path.to_string_lossy().as_ref(), &code)?;
                 let output = compiler.compile(
                     ctx.intern(""),
@@ -91,28 +91,23 @@ fn main() -> Result<ExitCode, Error> {
                 }
                 println!();
 
-                for function in output
+                for (function, chunk) in output
                     .exported_functions
                     .values()
-                    .chain(output.chunks.iter().map(|(_, o)| o))
+                    .map(|&(ref o, chunk_index)| (o, &output.chunks[chunk_index].0))
+                    .chain(output.chunks.iter().map(|(c, o)| (o, c)))
                 {
                     match function.prototype.reference {
                         vm::FunctionRef::Named(ref_name, span) => {
                             println!(
                                 "==[Function named {ref_name} at line {}]==",
-                                output.chunks[function.chunk_index]
-                                    .0
-                                    .line_numbers
-                                    .line(span.start())
+                                chunk.line_numbers.line(span.start())
                             );
                         }
                         vm::FunctionRef::Expression(span) => {
                             println!(
                                 "==[Function expression at line {}]==",
-                                output.chunks[function.chunk_index]
-                                    .0
-                                    .line_numbers
-                                    .line(span.start())
+                                chunk.line_numbers.line(span.start())
                             );
                         }
                         vm::FunctionRef::Chunk => {

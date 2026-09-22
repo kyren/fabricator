@@ -14,6 +14,7 @@ pub mod line_numbers;
 pub mod macros;
 pub mod parser;
 pub mod preprocessing;
+pub mod serialization;
 pub mod string_interner;
 pub mod tokens;
 

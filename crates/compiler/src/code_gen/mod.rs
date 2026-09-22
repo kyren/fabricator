@@ -6,16 +6,13 @@ mod upsilon_reachability;
 
 pub use self::{
     generate::gen_prototype,
-    prototype::{HeapVarDescriptor, Prototype},
+    prototype::{HeapVarDescriptor, Prototype, VmPrototypeError},
 };
 
-use fabricator_vm::instructions;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ProtoGenError {
-    #[error("{0}")]
-    ByteCodeEncoding(#[from] instructions::ByteCodeEncodingError),
     #[error("too many registers used")]
     RegisterOverflow,
     #[error("too many heap variables used")]

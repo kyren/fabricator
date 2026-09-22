@@ -40,6 +40,18 @@ impl LineNumbers {
             Err(i) => i,
         })
     }
+
+    /// Returns logical byte offsets that represent each line break.
+    pub fn into_line_breaks(self) -> impl Iterator<Item = usize> {
+        self.line_breaks.into_iter()
+    }
+
+    /// Cosntruct a new `LineNumbers` from the given set of line breaks.
+    pub fn from_line_breaks(line_breaks: impl IntoIterator<Item = usize>) -> Self {
+        Self {
+            line_breaks: line_breaks.into_iter().collect(),
+        }
+    }
 }
 
 #[cfg(test)]

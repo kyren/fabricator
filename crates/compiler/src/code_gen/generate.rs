@@ -2,7 +2,7 @@ use std::{collections::hash_map, hash::Hash};
 
 use fabricator_util::typed_id_map::SecondaryMap;
 use fabricator_vm::{
-    self as vm, Span,
+    Span,
     instructions::{self, InstIdx, Instruction},
 };
 use rustc_hash::FxHashMap;
@@ -837,11 +837,9 @@ fn codegen_function<S: Clone + Eq + Hash>(
         }
     }
 
-    let bytecode = vm::ByteCode::encode(vm_instructions.into_iter())?;
-
     Ok(Prototype {
         reference: ir.reference.clone(),
-        bytecode,
+        instructions: vm_instructions.into_boxed_slice(),
         constants: constants.into_boxed_slice(),
         prototypes: prototypes.into_boxed_slice(),
         heap_vars: heap_alloc.heap_var_descriptors.into_boxed_slice(),
