@@ -1114,6 +1114,11 @@ impl<'gc, 'a> instructions::Dispatch for Dispatch<'gc, 'a> {
         Err(ScriptError::new(self.registers[source.index()]).into())
     }
 
+    #[inline(always)]
+    fn jump(&mut self) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+
     #[inline]
     fn jump_if(&mut self, test: RegIdx, is_true: bool) -> Result<bool, Self::Error> {
         Ok(self.registers[test.index()].cast_bool() == is_true)

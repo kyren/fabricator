@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::{
     debug::Span,
     instructions::instruction::{
-        ConstIdx, HeapIdx, InstIdx, Instruction, MagicIdx, ProtoIdx, RegIdx,
+        ConstIdx, HeapIdx, InstIdx, Instruction, MagicIdx, ProtoIdx, RegIdx, for_each_instruction,
     },
 };
 
@@ -104,7 +104,7 @@ impl ByteCode {
             macro_rules! fixup_targets {
                 (
                     $([basic] $(#[$_basic_attr:meta])* $basic_snake_name:ident = $basic_name:ident { $($basic_field:ident : $basic_field_ty:ty),* $(,)? };)*
-                    $([$(jump)? $(jump_if)?] $(#[$_jump_attr:meta])* $jump_snake_name:ident = $jump_name:ident { target: InstIdx $(, $jump_field:ident : $jump_field_ty:ty)* $(,)? };)*
+                    $([jump] $(#[$_jump_attr:meta])* $jump_snake_name:ident = $jump_name:ident { target: InstIdx $(, $jump_field:ident : $jump_field_ty:ty)* $(,)? };)*
                     $([control] $(#[$_control_attr:meta])* $control_snake_name:ident = $control_name:ident { $($control_field:ident : $control_field_ty:ty),* $(,)? };)*
                 ) => {
                     match &mut inst {
@@ -226,7 +226,7 @@ impl ByteCode {
             macro_rules! decode {
                 (
                     $([basic] $(#[$_basic_attr:meta])* $basic_snake_name:ident = $basic_name:ident { $($basic_field:ident : $basic_field_ty:ty),* $(,)? };)*
-                    $([$(jump)? $(jump_if)?] $(#[$_jump_attr:meta])* $jump_snake_name:ident = $jump_name:ident { target: InstIdx $(, $jump_field:ident : $jump_field_ty:ty)* $(,)? };)*
+                    $([jump] $(#[$_jump_attr:meta])* $jump_snake_name:ident = $jump_name:ident { target: InstIdx $(, $jump_field:ident : $jump_field_ty:ty)* $(,)? };)*
                     $([control] $(#[$_control_attr:meta])* $control_snake_name:ident = $control_name:ident { $($control_field:ident : $control_field_ty:ty),* $(,)? };)*
                 ) => {
                     match opcode {
@@ -413,8 +413,7 @@ impl<'gc> Dispatcher<'gc> {
             macro_rules! dispatch {
                 (
                     $([basic] $(#[$_basic_attr:meta])* $basic_snake_name:ident = $basic_name:ident { $($basic_field:ident : $basic_field_ty:ty),* $(,)? };)*
-                    $([jump] $(#[$_jump_attr:meta])* $jump_snake_name:ident = $jump_name:ident { $($jump_field:ident : $jump_field_ty:ty),* $(,)? };)*
-                    $([jump_if] $(#[$_jump_if_attr:meta])* $jump_if_snake_name:ident = $jump_if_name:ident { target: InstIdx $(, $jump_if_field:ident : $jump_if_field_ty:ty)* $(,)? };)*
+                    $([jump] $(#[$_jump_attr:meta])* $jump_snake_name:ident = $jump_name:ident { target: InstIdx $(, $jump_field:ident : $jump_field_ty:ty)* $(,)? };)*
                     $([control] $(#[$_control_attr:meta])* $control_snake_name:ident = $control_name:ident { $($control_field:ident : $control_field_ty:ty),* $(,)? };)*
                 ) => {
                     match opcode {
@@ -425,15 +424,10 @@ impl<'gc> Dispatcher<'gc> {
                             }
                         )*
 
-                        OpCode::Jump => {
-                            let params::Jump { target } = bytecode_read(&mut self.ptr);
-                            self.ptr = self.bytecode.bytes.as_ptr().byte_add(target.0 as usize);
-                        }
-
                         $(
-                            OpCode::$jump_if_name => {
-                                let params::$jump_if_name { target  $(, $jump_if_field)* } = bytecode_read(&mut self.ptr);
-                                if dispatch.$jump_if_snake_name($($jump_if_field),*)? {
+                            OpCode::$jump_name => {
+                                let params::$jump_name { target  $(, $jump_field)* } = bytecode_read(&mut self.ptr);
+                                if dispatch.$jump_snake_name($($jump_field),*)? {
                                     self.ptr = self.bytecode.bytes.as_ptr().byte_add(target.0 as usize);
                                 }
                             }
@@ -462,7 +456,6 @@ macro_rules! define_dispatch {
     (
         $([basic] $(#[$_basic_attr:meta])* $basic_snake_name:ident = $basic_name:ident { $($basic_field:ident : $basic_field_ty:ty),* $(,)? };)*
         $([jump] $(#[$_jump_attr:meta])* $jump_snake_name:ident = $jump_name:ident { target: InstIdx $(, $jump_field:ident : $jump_field_ty:ty)* $(,)? };)*
-        $([jump_if] $(#[$_jump_if_attr:meta])* $jump_if_snake_name:ident = $jump_if_name:ident { target: InstIdx $(, $jump_if_field:ident : $jump_if_field_ty:ty)* $(,)? };)*
         $([control] $(#[$_control_attr:meta])* $control_snake_name:ident = $control_name:ident { $($control_field:ident : $control_field_ty:ty),* $(,)? };)*
     ) => {
         pub trait Dispatch {
@@ -470,7 +463,7 @@ macro_rules! define_dispatch {
             type Error;
 
             $(fn $basic_snake_name(&mut self, $($basic_field: $basic_field_ty),*) -> Result<(), Self::Error>;)*
-            $(fn $jump_if_snake_name(&mut self, $($jump_if_field: $jump_if_field_ty),*) -> Result<bool, Self::Error>;)*
+            $(fn $jump_snake_name(&mut self, $($jump_field: $jump_field_ty),*) -> Result<bool, Self::Error>;)*
             $(fn $control_snake_name(&mut self, $($control_field: $control_field_ty),*) -> Result<ControlFlow<Self::Break>, Self::Error>;)*
         }
     };

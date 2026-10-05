@@ -62,7 +62,9 @@ make_idx!(ProtoIdx, u16, "P");
 make_idx!(MagicIdx, u32, "M");
 make_idx!(InstIdx, u32, "I");
 
-macro_rules! for_each_instruction {
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __for_each_instruction {
     ($macro:ident) => {
         $macro! {
             [basic]
@@ -239,42 +241,42 @@ macro_rules! for_each_instruction {
 
             [jump] jump = Jump { target: InstIdx };
 
-            [jump_if]
+            [jump]
             jump_if = JumpIf {
                 target: InstIdx,
                 arg: RegIdx,
                 is_true: bool,
             };
 
-            [jump_if]
+            [jump]
             jump_if_undefined = JumpIfUndefined {
                 target: InstIdx,
                 arg: RegIdx,
                 is_undefined: bool,
             };
 
-            [jump_if]
+            [jump]
             jump_if_equal = JumpIfEqual {
                 target: InstIdx,
                 left: RegIdx,
                 right: RegIdx,
             };
 
-            [jump_if]
+            [jump]
             jump_if_not_equal = JumpIfNotEqual {
                 target: InstIdx,
                 left: RegIdx,
                 right: RegIdx,
             };
 
-            [jump_if]
+            [jump]
             jump_if_less = JumpIfLess {
                 target: InstIdx,
                 left: RegIdx,
                 right: RegIdx,
             };
 
-            [jump_if]
+            [jump]
             jump_if_less_equal = JumpIfLessEqual {
                 target: InstIdx,
                 left: RegIdx,
@@ -300,6 +302,38 @@ macro_rules! for_each_instruction {
         }
     };
 }
+
+/// A macro called for every instruction type.
+///
+/// Purposefully does not import FooIdx types to allow for custom definitions, but expects types of
+/// those names to be in scope.
+///
+/// Calls a provided macro with a block of instructions defined like this:
+///
+/// ```raw
+/// {
+///     [inst_type]
+///     /// Doc comment.
+///     snake_name = CamelName {
+///         field1: Type1,
+///         ...
+///     };
+///
+///     ...
+/// }
+/// ```
+///
+/// Where `inst_type` is one of `basic`, `jump`, or `control`.
+///
+/// Basic instructions are dispatched such that they return nothing and have no extra behavior.
+///
+/// Jump instructions always have `target: InstIdx` as the first field, and are dispatched as
+/// returning a boolean which determines whether control jumps to the target instruction.
+///
+/// Control instructions are dispatched as returning a `ControlFlow` that allows them to break
+/// execution of the current function.
+#[doc(inline)]
+pub use crate::__for_each_instruction as for_each_instruction;
 
 macro_rules! define_instruction {
     ($(
